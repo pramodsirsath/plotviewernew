@@ -1,6 +1,11 @@
 const app = require('./app.js');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
+const fs = require("fs");
+
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
 
 dotenv.config();
 
