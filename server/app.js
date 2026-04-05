@@ -7,7 +7,9 @@ const authRoutes = require("./src/routes/auth.js");
 const builderRoutes = require("./src/routes/builderRoutes.js");
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: "*"
+}));
 app.use(express.json());
 
 // serve images
