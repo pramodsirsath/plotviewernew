@@ -36,7 +36,8 @@ exports.uploadImage = (req, res) => {
     );
     res.json({ imageUrl });
   } catch (error) {
-    res.status(500).json({ message: "Upload failed" });
+    console.error("Upload controller error:", error);
+    res.status(500).json({ message: "Upload failed", error: error.message });
   }
 };
 

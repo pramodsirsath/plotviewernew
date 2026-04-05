@@ -32,12 +32,9 @@ export const resolveServerUrl = (value) => {
 
     if (
       typeof window !== "undefined" &&
-      ["localhost", "127.0.0.1"].includes(resolvedUrl.hostname) &&
       !["localhost", "127.0.0.1"].includes(window.location.hostname)
     ) {
-      const apiOrigin = new URL(API_ORIGIN);
-      resolvedUrl.protocol = apiOrigin.protocol;
-      resolvedUrl.host = apiOrigin.host;
+      resolvedUrl.host = resolvedUrl.host.replace(":5000", "");
     }
 
     return resolvedUrl.toString();

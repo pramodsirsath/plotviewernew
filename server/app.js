@@ -7,6 +7,7 @@ const authRoutes = require("./src/routes/auth.js");
 const builderRoutes = require("./src/routes/builderRoutes.js");
 const app = express();
 
+app.set("trust proxy", 1);
 app.use(cors())
 app.use(express.json());
 

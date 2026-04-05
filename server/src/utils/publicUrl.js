@@ -10,12 +10,12 @@ const getServerBaseUrl = (req) => {
     return trimTrailingSlash(process.env.SERVER_PUBLIC_URL);
   }
 
-  const host = req ? req.get("host") : `localhost:${process.env.PORT || 5000}`;
   const protocol = req ? req.protocol : "http";
+  const host = req ? req.get("host") : `localhost:${process.env.PORT || 5000}`;
 
-  // Strip port 5000 in production
-  const cleanHost =
-    process.env.NODE_ENV === "production" ? host.replace(":5000", "") : host;
+  // Strip port 5000 in production to avoid ERR_CONNECTION_TIMED_OUT
+  const isProduction = process.env.NODE_ENV === "production";
+  const cleanHost = isProduction ? host.split(":")[0] : host;
 
   return `${protocol}://${cleanHost}`;
 };
