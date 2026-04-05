@@ -30,21 +30,15 @@ const resolveUploadedImagePath = (req, imageUrl) => {
 
 exports.uploadImage = (req, res) => {
   try {
-    // 🔍 Debug logs (keep for now)
-    console.log("FILE:", req.file);
+    console.log("REQ.FILE:", req.file); // 🔍 MUST SEE THIS IN LOGS
 
-    // ❌ If no file uploaded
     if (!req.file) {
       return res.status(400).json({
-        message: "No file uploaded"
+        message: "File not received"
       });
     }
 
-    // ✅ Build image URL safely
-    const imageUrl = buildPublicUrl(
-      getServerBaseUrl(req),
-      `/uploads/${req.file.filename}`
-    );
+    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
 
     return res.status(200).json({
       message: "Upload successful",
@@ -52,8 +46,7 @@ exports.uploadImage = (req, res) => {
     });
 
   } catch (error) {
-    console.error("Upload controller error:", error);
-
+    console.error("UPLOAD ERROR:", error);
     return res.status(500).json({
       message: "Upload failed",
       error: error.message
