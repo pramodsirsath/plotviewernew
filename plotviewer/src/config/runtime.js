@@ -23,18 +23,32 @@ export const API_BASE_URL = rawApiBase.endsWith("/api")
 export const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
 
 export const resolveServerUrl = (value) => {
-  if (!value) {
+  if (!value || typeof value !== "string") {
     return value;
+  }
+
+  const isDeployed = typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+  // If it's a legacy hardcoded localhost URL and we're deployed, redirect to our real API_ORIGIN
+  if (isDeployed && (value.includes("localhost:") || value.includes("127.0.0.1:"))) {
+    try {
+      const url = new URL(value);
+      return `${trimTrailingSlash(API_ORIGIN)}${url.pathname}`;
+    } catch (e) {
+      // If parsing fails, fall back to simple string replacement for common uploads path
+      const uploadsIndex = value.indexOf("/uploads/");
+      if (uploadsIndex !== -1) {
+        return `${trimTrailingSlash(API_ORIGIN)}${value.substring(uploadsIndex)}`;
+      }
+    }
   }
 
   try {
     const resolvedUrl = new URL(value, API_ORIGIN);
 
-    if (
-      typeof window !== "undefined" &&
-      !["localhost", "127.0.0.1"].includes(window.location.hostname)
-    ) {
-      resolvedUrl.host = resolvedUrl.host.replace(":5000", "");
+    // If we're deployed but the URL still has a port 5000 (e.g. from an absolute URL), strip it
+    if (isDeployed && resolvedUrl.port === "5000") {
+      resolvedUrl.port = "";
     }
 
     return resolvedUrl.toString();

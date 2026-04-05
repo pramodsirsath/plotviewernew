@@ -38,7 +38,7 @@ exports.uploadImage = (req, res) => {
       });
     }
 
-    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+    const imageUrl = buildPublicUrl(getServerBaseUrl(req), `/uploads/${req.file.filename}`);
 
     return res.status(200).json({
       message: "Upload successful",

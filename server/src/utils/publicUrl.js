@@ -10,12 +10,22 @@ const getServerBaseUrl = (req) => {
     return trimTrailingSlash(process.env.SERVER_PUBLIC_URL);
   }
 
-  const protocol = req ? req.protocol : "http";
+  // Use x-forwarded-proto if behind a proxy (like Render/Heroku)
+  const xForwardedProto = req?.headers?.["x-forwarded-proto"];
+  const protocol = xForwardedProto || (req ? req.protocol : "http");
   const host = req ? req.get("host") : `localhost:${process.env.PORT || 5000}`;
 
-  // Strip port 5000 in production to avoid ERR_CONNECTION_TIMED_OUT
-  const isProduction = process.env.NODE_ENV === "production";
-  const cleanHost = isProduction ? host.split(":")[0] : host;
+  // Strip port in production if it's explicitly set to 5000 or the app port, 
+  // but only if we are not on localhost.
+  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
+  let cleanHost = host;
+
+  if (process.env.NODE_ENV === "production" && !isLocal && host.includes(":")) {
+    const [hostname, port] = host.split(":");
+    if (port === "5000" || port === String(process.env.PORT)) {
+      cleanHost = hostname;
+    }
+  }
 
   return `${protocol}://${cleanHost}`;
 };
