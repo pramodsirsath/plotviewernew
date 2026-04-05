@@ -2,9 +2,15 @@ const app = require('./app.js');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const fs = require("fs");
+const path = require("path");
 
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
+const uploadsDir = path.resolve(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+} else if (!fs.statSync(uploadsDir).isDirectory()) {
+  // If 'uploads' exists as a file (e.g. git placeholder), remove it and create a directory
+  fs.unlinkSync(uploadsDir);
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 dotenv.config();
