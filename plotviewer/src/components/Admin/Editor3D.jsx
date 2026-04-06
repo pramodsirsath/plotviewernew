@@ -1,15 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, Home } from 'lucide-react';
+import FitToLayoutController from "../shared/FitToLayoutController";
+import { getPlotCenter, getPlotBounds } from "../../utils/plotGeometry";
 import { RenderProp } from '../shared/Props3D';
 import API from "../../services/api";
+import PlotSelection3D from "../shared/PlotSelection3D";
+import CameraAngleController from "../shared/CameraAngleController";
+import useIsCoarsePointer from "../shared/useIsCoarsePointer";
+import { LAYOUT_MAP_COLORS } from "../../theme/layoutMapTheme";
 
 const SCALE = 0.05;
+const DEFAULT_TOUCH_CONTROLS = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+const MOBILE_TOUCH_CONTROLS = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
 
-function PlotMesh({ plot, isSelected, onClick }) {
+function PlotMesh({ plot, isSelected, isDimmed, onClick }) {
   const geometry = useMemo(() => {
     const shape = new THREE.Shape();
     
@@ -59,14 +67,16 @@ function PlotMesh({ plot, isSelected, onClick }) {
           onClick(plot);
         }}
       >
-        <meshStandardMaterial 
-          color={isSelected ? "#3b82f6" : "#E8E2CD"} 
-          roughness={1} 
-          metalness={0} 
-        />
+          <meshStandardMaterial 
+            color={isSelected ? LAYOUT_MAP_COLORS.selectedPlot : LAYOUT_MAP_COLORS.plot} 
+            roughness={1} 
+            metalness={0} 
+            transparent={!!isDimmed}
+            opacity={isDimmed ? 0.25 : 1}
+          />
         <lineSegments raycast={() => null}>
           <edgesGeometry attach="geometry" args={[geometry]} />
-          <lineBasicMaterial attach="material" color="#2b2b2b" linewidth={1} />
+            <lineBasicMaterial attach="material" color={LAYOUT_MAP_COLORS.plotNumber} linewidth={1} transparent={!!isDimmed} opacity={isDimmed ? 0.25 : 1} />
         </lineSegments>
       </mesh>
     </group>
@@ -102,9 +112,76 @@ function BoundaryMesh({ boundary, meta, isDimOverlay }) {
 
   return (
     <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-      <meshStandardMaterial color="#3f3f3f" roughness={1} />
+      <meshStandardMaterial color={LAYOUT_MAP_COLORS.background} roughness={1} />
     </mesh>
   );
+}
+
+// Simple camera animator for Admin editor to focus selected plot
+function CameraAnimator({ cameraTargetPlot, layout, isTopDown, angleAnimating, fitLocked }) {
+  const { camera, controls } = useThree();
+  React.useEffect(() => {
+    if (isTopDown || angleAnimating || fitLocked) return;
+    if (cameraTargetPlot === undefined) return;
+    if (!controls || !layout) return;
+
+    const analysisW = layout.meta?.analysisWidth || 1000;
+    const analysisH = layout.meta?.analysisHeight || 1000;
+    let frame;
+    let cancelled = false;
+    const startTarget = controls.target.clone();
+    const startPos = camera.position.clone();
+    const startTime = performance.now();
+
+    let endTarget = new THREE.Vector3();
+    let endPos = new THREE.Vector3();
+    if (cameraTargetPlot) {
+      const cx = getPlotCenter(cameraTargetPlot).x * SCALE - (analysisW * SCALE) / 2;
+      const cz = getPlotCenter(cameraTargetPlot).y * SCALE - (analysisH * SCALE) / 2;
+      endTarget.set(cx, 0, cz);
+      const bounds = getPlotBounds(cameraTargetPlot);
+      const width = Math.max(0.0001, bounds.width * SCALE);
+      const height = Math.max(0.0001, bounds.height * SCALE);
+      const fillFraction = 0.7;
+      const fov = ((camera.fov || 45) * Math.PI) / 180;
+      const aspect = camera.aspect || (window.innerWidth / window.innerHeight);
+      const tanFov2 = Math.tan(fov / 2);
+      const halfH = height / 2;
+      const halfW = width / 2;
+      const distV = halfH / (tanFov2 * fillFraction);
+      const distH = halfW / (tanFov2 * aspect * fillFraction);
+      const dist = Math.max(8, Math.max(distV, distH));
+      const polar = controls.getPolarAngle ? controls.getPolarAngle() : Math.PI / 4;
+      const azimuth = controls.getAzimuthalAngle ? controls.getAzimuthalAngle() : 0;
+      endPos.set(
+        endTarget.x + dist * Math.sin(polar) * Math.sin(azimuth),
+        endTarget.y + dist * Math.cos(polar),
+        endTarget.z + dist * Math.sin(polar) * Math.cos(azimuth)
+      );
+    } else {
+      endTarget.set(0, 0, 0);
+      const overviewH = Math.max(analysisH * SCALE * 1.5, 50);
+      endPos.set(0, overviewH * 0.6, (analysisH * SCALE) / 2 + 40);
+    }
+
+    const cancelOnInteract = () => { cancelled = true; };
+    controls.addEventListener('start', cancelOnInteract);
+
+    const animate = (now) => {
+      if (cancelled) return;
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / 800, 1);
+      const ease = 1 - Math.pow(1 - t, 4);
+      controls.target.lerpVectors(startTarget, endTarget, ease);
+      camera.position.lerpVectors(startPos, endPos, ease);
+      controls.update();
+      if (t < 1) frame = requestAnimationFrame(animate);
+    };
+
+    frame = requestAnimationFrame(animate);
+    return () => { cancelled = true; controls.removeEventListener('start', cancelOnInteract); if (frame) cancelAnimationFrame(frame); };
+  }, [cameraTargetPlot, camera, controls, layout, isTopDown, angleAnimating, fitLocked]);
+  return null;
 }
 
 const styles = {
@@ -112,7 +189,7 @@ const styles = {
     width: "100%",
     height: "100vh",
     position: "relative",
-    background: "#222222",
+    background: LAYOUT_MAP_COLORS.background,
     overflow: "hidden",
     fontFamily: "Inter, sans-serif"
   },
@@ -187,19 +264,6 @@ const styles = {
     borderColor: "#ffad4d",
     color: "#000000"
   },
-  modeBtn: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "50%",
-    fontWeight: "bold",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    cursor: "pointer",
-    transition: "all 0.3s ease"
-  },
   btn: {
     display: "flex",
     alignItems: "center",
@@ -262,13 +326,28 @@ export default function Editor3D() {
   const navigate = useNavigate();
   const [layoutData, setLayoutData] = useState(null);
   const [selectedPlot, setSelectedPlot] = useState(null);
-  const [is2DMode, setIs2DMode] = useState(false);
+  const [cameraTargetPlot, setCameraTargetPlot] = useState(undefined);
   const [isSaving, setIsSaving] = useState(false);
   
   const [placedItems, setPlacedItems] = useState([]);
   const [activeTool, setActiveTool] = useState(null);
   const [selectedPropId, setSelectedPropId] = useState(null);
   const [transformMode, setTransformMode] = useState('translate');
+  const controlsRef = useRef();
+  const [isTopDown, setIsTopDown] = useState(false);
+  const [angleAnimating, setAngleAnimating] = useState(false);
+  const [fitKey, setFitKey] = useState(0);
+  const [fitLocked, setFitLocked] = useState(false);
+  const isCoarsePointer = useIsCoarsePointer();
+
+    // Clear fit lock when user interacts with controls (so Home persists until user starts interacting)
+    useEffect(() => {
+      const c = controlsRef.current;
+      if (!c) return;
+      const onStart = () => setFitLocked(false);
+      c.addEventListener('start', onStart);
+      return () => c.removeEventListener('start', onStart);
+    }, [controlsRef]);
 
   useEffect(() => {
     const fetchLayout = async () => {
@@ -366,11 +445,26 @@ export default function Editor3D() {
            >
              <Save width={16} height={16} /> {isSaving ? "Saving..." : "Save 3D Layout"}
            </button>
+           <button
+             onClick={() => { setSelectedPlot(null); setCameraTargetPlot(undefined); setFitLocked(false); setFitKey(k => k + 1); setAngleAnimating(true); }}
+             style={{ ...styles.btn, marginLeft: 8 }}
+             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.8)'}
+             onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.6)'}
+           >
+             <Home width={16} height={16} /> Home
+           </button>
+           <button
+             onClick={() => setIsTopDown((s) => !s)}
+             style={{ ...styles.btn, marginLeft: 8 }}
+             title={isTopDown ? 'Switch to 3D' : 'Switch to 2D'}
+           >
+             {isTopDown ? '2D' : '3D'}
+           </button>
          </div>
 
          {selectedPlot && (
             <div style={styles.infoBox}>
-               <h3 style={{ color: "#ff8c00", fontWeight: "bold", fontSize: "1.125rem", margin: "0 0 4px 0" }}>Plot {selectedPlot.plotNo}</h3>
+               <h3 style={{ color: LAYOUT_MAP_COLORS.selectedPlot, fontWeight: "bold", fontSize: "1.125rem", margin: "0 0 4px 0" }}>Plot {selectedPlot.plotNo}</h3>
                <div style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
                   <p style={{ margin: "4px 0" }}>Status: <span style={{ color: "#ffffff" }}>{selectedPlot.status}</span></p>
                   <p style={{ margin: "4px 0" }}>Type: <span style={{ color: "#ffffff" }}>{selectedPlot.points?.length ? 'Polygon' : 'Rectangle'}</span></p>
@@ -422,8 +516,8 @@ export default function Editor3D() {
         </div>
       )}
 
-      <Canvas shadows camera={{ position: [0, Math.max(height * SCALE * 1.5, 50), centerOffsetZ + 40], fov: 45 }}>
-        <color attach="background" args={['#222222']} />
+      <Canvas shadows camera={{ position: [0, Math.max(height * SCALE * 1.5, 50), centerOffsetZ + 40], fov: 45 }} style={{ touchAction: 'none' }}>
+        <color attach="background" args={[LAYOUT_MAP_COLORS.background]} />
         
         <ambientLight intensity={0.6} />
         <directionalLight 
@@ -434,6 +528,7 @@ export default function Editor3D() {
         />
         <Environment preset="city" opacity={0.3} />
 
+        <CameraAnimator cameraTargetPlot={cameraTargetPlot} layout={layoutData} isTopDown={isTopDown} angleAnimating={angleAnimating} fitLocked={fitLocked} />
         <group position={[-centerOffsetX, 0, -centerOffsetZ]}>
           <BoundaryMesh boundary={layoutData.boundary} meta={layoutData.meta} />
           
@@ -442,11 +537,12 @@ export default function Editor3D() {
               key={plot.id || Math.random()} 
               plot={plot} 
               isSelected={selectedPlot?._id === plot._id}
-              onClick={setSelectedPlot}
+              isDimmed={!!selectedPlot && selectedPlot._id !== plot._id}
+              onClick={(p) => { setSelectedPlot(p); setCameraTargetPlot(p); }}
             />
           ))}
+            {selectedPlot && <PlotSelection3D plot={selectedPlot} scale={SCALE} />}
         </group>
-
         <mesh 
            rotation={[-Math.PI / 2, 0, 0]} 
            position={[0, -0.06, 0]} 
@@ -469,39 +565,26 @@ export default function Editor3D() {
            />
         ))}
 
-        {!is2DMode && (
-           <ContactShadows resolution={1024} scale={200} blur={2} opacity={0.5} far={10} color="#000000" />
-        )}
+        <ContactShadows resolution={1024} scale={200} blur={2} opacity={0.5} far={10} color="#000000" />
         
-        <OrbitControls 
-           makeDefault
-           minPolarAngle={is2DMode ? 0 : 0}
-           maxPolarAngle={is2DMode ? 0 : Math.PI / 2 - 0.05}
-           enableRotate={!is2DMode}
-           enableDamping={true}
-           dampingFactor={0.08}
-           target={[0, 0, 0]}
-        />
+          <CameraAngleController isTopDown={isTopDown} controlsRef={controlsRef} duration={360} onStart={() => setAngleAnimating(true)} onComplete={() => setAngleAnimating(false)} />
+          <FitToLayoutController fitKey={fitKey} isTopDown={isTopDown} image={null} layout={layoutData} scale={SCALE} duration={1600} onStart={() => setAngleAnimating(true)} onComplete={() => { setAngleAnimating(false); setFitLocked(true); }} />
+          <OrbitControls 
+            ref={controlsRef}
+            makeDefault
+            touches={isCoarsePointer ? MOBILE_TOUCH_CONTROLS : DEFAULT_TOUCH_CONTROLS}
+            minPolarAngle={0}
+            maxPolarAngle={Math.PI / 2 - 0.05}
+            enableRotate={true}
+            enableDamping={true}
+            dampingFactor={0.08}
+            target={[0, 0, 0]}
+          />
       </Canvas>
-      
-      <div style={styles.bottomRight}>
-         <button
-            onClick={() => setIs2DMode(!is2DMode)}
-            style={{
-              ...styles.modeBtn,
-              background: is2DMode ? "#ff8c00" : "#2a2a2a",
-              color: is2DMode ? "#000000" : "#ffffff",
-              borderColor: is2DMode ? "transparent" : "rgba(255,255,255,0.2)"
-            }}
-            onMouseEnter={(e) => { if (!is2DMode) e.currentTarget.style.background = "#333333" }}
-            onMouseLeave={(e) => { if (!is2DMode) e.currentTarget.style.background = "#2a2a2a" }}
-         >
-            {is2DMode ? '3D' : '2D'}
-         </button>
-      </div>
+      {angleAnimating && <div style={{ position: 'absolute', inset: 0, zIndex: 60, pointerEvents: 'auto', background: 'transparent' }} />}
 
-      <div style={{ ...styles.helperToast, opacity: is2DMode ? 0.3 : 1 }}>
-        {activeTool ? `Click terrain to place ${activeTool} • Select 'Trash' to delete` : (is2DMode ? 'Left/Right-click to Pan • Scroll to Zoom' : 'Left-click to Rotate • Right-click to Pan')}
+      <div style={styles.helperToast}>
+        {activeTool ? `Click terrain to place ${activeTool} • Select 'Trash' to delete` : 'Left-click to Rotate • Right-click to Pan'}
       </div>
     </div>
   );

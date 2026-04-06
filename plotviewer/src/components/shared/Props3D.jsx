@@ -1,6 +1,7 @@
-import * as THREE from 'three';
-import { Text, TransformControls } from '@react-three/drei';
+import { TransformControls } from '@react-three/drei';
 import { useState } from 'react';
+import GroundTextLabel3D from './GroundTextLabel3D';
+import { LAYOUT_MAP_COLORS } from '../../theme/layoutMapTheme';
 export function TreeMesh() {
   return (
     <group>
@@ -12,17 +13,17 @@ export function TreeMesh() {
       {/* Main Leaf Cluster */}
       <mesh position={[0, 1.8, 0]} castShadow>
         <icosahedronGeometry args={[1, 1]} />
-        <meshStandardMaterial color="#4f6b15" roughness={0.9} />
+        <meshStandardMaterial color={LAYOUT_MAP_COLORS.treeLeaf} roughness={0.9} />
       </mesh>
       {/* Left Leaf Cluster */}
       <mesh position={[-0.5, 1.5, 0.3]} castShadow>
         <icosahedronGeometry args={[0.7, 1]} />
-        <meshStandardMaterial color="#557514" roughness={0.9} />
+        <meshStandardMaterial color={LAYOUT_MAP_COLORS.treeLeaf} roughness={0.9} />
       </mesh>
       {/* Right Leaf Cluster */}
       <mesh position={[0.4, 2.1, -0.4]} castShadow>
         <icosahedronGeometry args={[0.6, 1]} />
-        <meshStandardMaterial color="#425c11" roughness={0.9} />
+        <meshStandardMaterial color={LAYOUT_MAP_COLORS.treeLeaf} roughness={0.9} />
       </mesh>
     </group>
   );
@@ -168,7 +169,7 @@ export function GrassMesh() {
       {/* Completely flat grass pad */}
       <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[5, 5]} />
-        <meshStandardMaterial color="#718241" roughness={1} />
+        <meshStandardMaterial color={LAYOUT_MAP_COLORS.grass} roughness={1} />
       </mesh>
     </group>
   );
@@ -209,20 +210,19 @@ export function RoadTextMesh({ item }) {
       {/* Asphalt Plane */}
       <mesh receiveShadow position={[0, 0, 0]}>
         <planeGeometry args={[10, 4]} />
-        <meshStandardMaterial color="#3a3a3a" roughness={0.95} />
+        <meshStandardMaterial color={LAYOUT_MAP_COLORS.road} roughness={0.95} />
       </mesh>
 
       {/* Text Label */}
-      <Text
+      <GroundTextLabel3D
+        text={item?.text || "ROAD"}
         position={[0, 0, 0.05]}
-        fontSize={1.5}
-        color="#ffffff"
-        font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZJhjp-Ek-_EeA.woff"
-        outlineColor="#000000"
-        outlineWidth={0.04}
-      >
-        {item?.text || "ROAD"}
-      </Text>
+        fontSize={1.35}
+        color={LAYOUT_MAP_COLORS.roadText}
+        outlineColor={LAYOUT_MAP_COLORS.roadTextAccent}
+        outlineWidth={0.22}
+        depthWrite={false}
+      />
     </group>
   );
 }

@@ -18,6 +18,11 @@ import {
   normalizeAngle,
   normalizeAngleDelta,
 } from "../../utils/gestureUtils";
+import {
+  getLayoutStatusFill,
+  LAYOUT_MAP_COLORS,
+  LAYOUT_MAP_FONT_FAMILY,
+} from "../../theme/layoutMapTheme";
 
 const DEFAULT_STATUS = "Available";
 
@@ -333,7 +338,7 @@ const PlotEditor = () => {
                       width={rect.width}
                       height={rect.height}
                       fill={getPlotFill(rect.status)}
-                      stroke={selectedId === rect.id ? "#16a34a" : "#2563eb"}
+                      stroke={selectedId === rect.id ? LAYOUT_MAP_COLORS.selectedPlot : LAYOUT_MAP_COLORS.plotNumber}
                       strokeWidth={2}
                       draggable
                       onClick={() => setSelectedId(rect.id)}
@@ -348,7 +353,8 @@ const PlotEditor = () => {
                         y={rect.y + 5}
                         text={`#${rect.plotNo}\n${rect.plotWidth || "-"} x ${rect.plotHeight || "-"}`}
                         fontSize={12}
-                        fill="#0f172a"
+                        fontFamily={LAYOUT_MAP_FONT_FAMILY}
+                        fill={LAYOUT_MAP_COLORS.plotNumber}
                       />
                     )}
                   </React.Fragment>
@@ -400,11 +406,7 @@ const PlotEditor = () => {
   );
 };
 
-const getPlotFill = (status) => {
-  if (status === "Sold") return "rgba(220,38,38,0.5)";
-  if (status === "Reserved") return "rgba(245,158,11,0.45)";
-  return "rgba(34,197,94,0.4)";
-};
+const getPlotFill = (status) => getLayoutStatusFill(status, 0.5);
 
 export default PlotEditor;
 

@@ -1,3 +1,8 @@
+import {
+  LAYOUT_MAP_COLORS,
+  LAYOUT_STATUS_COLORS,
+} from "../theme/layoutMapTheme";
+
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
 
 export const getPlotPoints = (plot) => {
@@ -166,9 +171,9 @@ export const generateLayoutSVG = (layout) => {
         d += `L ${layout.boundary[i] + offsetX} ${layout.boundary[i+1] + offsetY} `;
      }
      d += "Z";
-     bg = `<path d="${d}" fill="#262626" stroke="#1A1A1A" stroke-width="2" />`;
+     bg = `<path d="${d}" fill="${LAYOUT_MAP_COLORS.background}" stroke="${LAYOUT_MAP_COLORS.compoundWall}" stroke-width="2" />`;
   } else {
-     bg = `<rect width="100%" height="100%" fill="#262626" rx="4"/>`;
+     bg = `<rect width="100%" height="100%" fill="${LAYOUT_MAP_COLORS.background}" rx="4"/>`;
   }
 
   const shapes = layout.plots.map(plot => {
@@ -185,15 +190,15 @@ export const generateLayoutSVG = (layout) => {
       d = `M ${px} ${py} L ${px + plot.width} ${py} L ${px + plot.width} ${py + plot.height} L ${px} ${py + plot.height} Z`;
     }
 
-    const fill = plot.status === "Sold" ? "#A04343" : plot.status === "Reserved" ? "#B88B4A" : "#E8E2CD";
-    return `<path d="${d}" fill="${fill}" fill-opacity="1" stroke="#1A1A1A" stroke-width="2"/>`;
+    const fill = LAYOUT_STATUS_COLORS[plot.status] || LAYOUT_MAP_COLORS.plot;
+    return `<path d="${d}" fill="${fill}" fill-opacity="1" stroke="${LAYOUT_MAP_COLORS.plotNumber}" stroke-width="2"/>`;
   }).join("\\n");
 
   const propsSvg = (layout.props || []).map(p => {
     const px = Math.round(p.x + offsetX);
     const py = Math.round(p.y + offsetY);
     const sc = Math.max(8, p.scaleX * 10);
-    if (p.type === 'tree1') return `<circle cx="${px}" cy="${py}" r="${sc}" fill="#4ade80" stroke="#166534" stroke-width="2"/>`;
+    if (p.type === 'tree1') return `<circle cx="${px}" cy="${py}" r="${sc}" fill="${LAYOUT_MAP_COLORS.treeLeaf}" stroke="${LAYOUT_MAP_COLORS.compoundWall}" stroke-width="2"/>`;
     if (p.type === 'streetLight') return `<circle cx="${px}" cy="${py}" r="${sc * 0.4}" fill="#fde047" stroke="#854d0e" stroke-width="1.5"/>`;
     return `<rect x="${px - sc}" y="${py - sc}" width="${sc*2}" height="${sc*2}" fill="#9ca3af" stroke="#4b5563" stroke-width="2" rx="4"/>`;
   }).join("\\n");

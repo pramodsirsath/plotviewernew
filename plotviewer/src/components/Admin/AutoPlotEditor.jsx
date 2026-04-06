@@ -25,6 +25,11 @@ import {
   normalizeAngle,
   normalizeAngleDelta,
 } from "../../utils/gestureUtils";
+import {
+  getLayoutStatusFill,
+  LAYOUT_MAP_COLORS,
+  LAYOUT_MAP_FONT_FAMILY,
+} from "../../theme/layoutMapTheme";
 
 const MIN_SCALE = 0.45;
 const MAX_SCALE = 4;
@@ -1417,8 +1422,8 @@ const PlotAnnotation = ({ plot, isSelected, onSelect, onShapeDragEnd }) => {
     <React.Fragment>
       <PlotShape
         plot={plot}
-        fill={plot.id === "boundary_plot" ? (isSelected ? "rgba(249, 115, 22, 0.15)" : "rgba(249, 115, 22, 0.05)") : getPlotFill(plot.status)}
-        stroke={plot.id === "boundary_plot" ? (isSelected ? "#ea580c" : "#f97316") : (isSelected ? "#0f766e" : "#2563eb")}
+        fill={plot.id === "boundary_plot" ? (isSelected ? "rgba(103, 103, 103, 0.18)" : "rgba(103, 103, 103, 0.08)") : getPlotFill(plot.status)}
+        stroke={plot.id === "boundary_plot" ? LAYOUT_MAP_COLORS.compoundWall : (isSelected ? LAYOUT_MAP_COLORS.selectedPlot : LAYOUT_MAP_COLORS.plotNumber)}
         strokeWidth={isSelected || plot.id === "boundary_plot" ? 3 : 2}
         dash={plot.id === "boundary_plot" && !isSelected ? [15, 15] : []}
         draggable={isSelected && plot.id !== "boundary_plot"}
@@ -1436,7 +1441,8 @@ const PlotAnnotation = ({ plot, isSelected, onSelect, onShapeDragEnd }) => {
         text={`#${plot.plotNo || "-"}`}
         fontSize={12}
         fontStyle="bold"
-        fill="#0f172a"
+        fontFamily={LAYOUT_MAP_FONT_FAMILY}
+        fill={LAYOUT_MAP_COLORS.plotNumber}
         listening={false}
       />
     </React.Fragment>
@@ -1640,11 +1646,7 @@ const PlotEditPopup = ({
   );
 };
 
-const getPlotFill = (status) => {
-  if (status === "Sold") return "rgba(220,38,38,0.5)";
-  if (status === "Reserved") return "rgba(245,158,11,0.45)";
-  return "rgba(34,197,94,0.4)";
-};
+const getPlotFill = (status) => getLayoutStatusFill(status, 0.5);
 
 export default AutoPlotEditor;
 

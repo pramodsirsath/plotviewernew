@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
-import { Share2, Map as MapIcon, Box, Home, Search as SearchIcon, Image as ImageIcon, Info, MapPin, FileImage, FileSpreadsheet, Eye, EyeOff } from "lucide-react";
+import { Share2, Map as MapIcon, Box, Home, Search as SearchIcon, Image as ImageIcon, Info, MapPin, FileImage, FileSpreadsheet } from "lucide-react";
 
 export const FloatingUI = ({
   isCanvasMode,
   setIsCanvasMode,
-  isTopDownView,
-  setIsTopDownView,
   onFit,
   onShare,
   onOpenGallery,
@@ -19,86 +17,81 @@ export const FloatingUI = ({
   showExtraActions = true,
   showStatus,
   setShowStatus,
+  // 2D/3D toggle
+  isTopDown,
+  onToggleTopDown,
 }) => {
   const [searchOpen, setSearchOpen] = useState(false);
+  const [localSearch, setLocalSearch] = useState(searchQuery || "");
 
-  // Determine current view mode for button highlight
-  const is3DActive = isCanvasMode && !isTopDownView;
-  const is2DActive = isCanvasMode && isTopDownView;
+  // Update local input if parent search query changes (e.g. from clear button)
+  React.useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
 
   const statusToggle = setShowStatus ? (
     <button
-      style={{
-        ...styles.modeBtn,
-        background: showStatus ? 'rgba(255,255,255,0.15)' : 'transparent',
-        position: 'relative',
-      }}
       onClick={() => setShowStatus((prev) => !prev)}
-      title={showStatus ? "Hide Status Colors" : "Show Status Colors"}
+      title={showStatus ? "Status: ON" : "Status: OFF"}
+      style={{
+        width: 56,
+        height: 30,
+        borderRadius: 999,
+        padding: 4,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: showStatus ? 'flex-end' : 'flex-start',
+        background: showStatus ? 'linear-gradient(90deg, #14b8a6, #06b6d4)' : 'rgba(255,255,255,0.04)',
+        border: showStatus ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.06)',
+        cursor: 'pointer',
+        pointerEvents: 'auto',
+      }}
     >
-      {showStatus ? <Eye size={18} color="#fff" /> : <EyeOff size={18} color="rgba(255,255,255,0.5)" />}
+      <div style={{ width: 20, height: 20, borderRadius: '50%', background: showStatus ? '#fff' : '#111827', boxShadow: showStatus ? '0 6px 18px rgba(20,184,166,0.18)' : '0 3px 8px rgba(0,0,0,0.6)' }} />
     </button>
   ) : null;
+
+  const primaryControls = (
+    <>
+      {onRawLayout && (
+        <button
+          style={{ ...styles.modeBtn, background: !isCanvasMode ? 'rgba(255,255,255,0.15)' : 'transparent' }}
+          onClick={onRawLayout}
+          title="Raw Layout"
+        >
+          <FileImage size={18} color="#fff" />
+        </button>
+      )}
+      {statusToggle}
+      <button
+        style={styles.modeBtn}
+        onClick={() => {
+          if (onFit) onFit();
+        }}
+        title="Home / Fit to Screen"
+      >
+        <Home size={18} color="#fff" />
+      </button>
+      {onShare && (
+        <button onClick={onShare} style={styles.modeBtn} title="Share">
+          <Share2 size={18} color="#fff" />
+        </button>
+      )}
+      {typeof onToggleTopDown === 'function' && (
+        <button onClick={onToggleTopDown} style={styles.modeBtn} title={isTopDown ? 'Switch to 3D' : 'Switch to 2D'}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{isTopDown ? '2D' : '3D'}</div>
+        </button>
+      )}
+    </>
+  );
 
   return (
     <>
       {/* ===== Desktop Layout (>= 641px) ===== */}
       <div style={styles.desktopContainer} className="floating-ui-desktop">
-        {/* Share button - top right standalone */}
-        {onShare && (
-          <button onClick={onShare} style={styles.circleBtn} title="Share">
-            <Share2 size={18} color="#fff" />
-          </button>
-        )}
-
-        {/* Icon button row: Raw Layout | 3D/2D toggle | Status | Home/Fit */}
+        {/* Icon button row: Raw Layout | Status | Home | Share | 2D/3D */}
         <div style={{ ...styles.pill, padding: '4px', gap: 4 }}>
-          {/* Raw Layout button */}
-          {onRawLayout && (
-            <button
-              style={{ ...styles.modeBtn, background: !isCanvasMode ? 'rgba(255,255,255,0.15)' : 'transparent' }}
-              onClick={onRawLayout}
-              title="Raw Layout"
-            >
-              <FileImage size={18} color="#fff" />
-            </button>
-          )}
-
-          {/* 3D / 2D Toggle */}
-          <button
-            style={{
-              ...styles.modeBtn,
-              background: is3DActive ? 'rgba(255,255,255,0.15)' : (is2DActive ? 'rgba(255,255,255,0.15)' : 'transparent'),
-              fontWeight: 800,
-              fontSize: '0.9rem',
-              minWidth: 44,
-            }}
-            onClick={() => {
-              if (isCanvasMode && !isTopDownView) {
-                setIsTopDownView(true);
-              } else {
-                setIsCanvasMode(true);
-                setIsTopDownView(false);
-              }
-            }}
-            title={is3DActive ? "Switch to 2D" : "Switch to 3D"}
-          >
-            {is3DActive ? '2D' : '3D'}
-          </button>
-
-          {/* Status Toggle */}
-          {statusToggle}
-
-          {/* Home / Fit button */}
-          <button
-            style={styles.modeBtn}
-            onClick={() => {
-              if (onFit) onFit();
-            }}
-            title="Home / Fit to Screen"
-          >
-            <Home size={18} color="#fff" />
-          </button>
+          {primaryControls}
         </div>
 
         {/* Search Bar */}
@@ -112,10 +105,15 @@ export const FloatingUI = ({
           >
             <SearchIcon size={16} color="rgba(255,255,255,0.5)" style={{ flexShrink: 0, marginLeft: 4 }} />
             <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setSearchQuery(localSearch);
+                }
+              }}
               onFocus={() => setSearchOpen(true)}
-              onBlur={() => { if (!searchQuery) setSearchOpen(false); }}
+              onBlur={() => { if (!localSearch) setSearchOpen(false); }}
               placeholder="Search Plot"
               style={styles.searchInput}
             />
@@ -145,58 +143,9 @@ export const FloatingUI = ({
 
       {/* ===== Mobile Layout (< 641px) ===== */}
       <div style={styles.mobileContainer} className="floating-ui-mobile">
-        {/* Share button - top right above main controls */}
-        {onShare && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', paddingRight: 4 }}>
-            <button onClick={onShare} style={styles.circleBtn} title="Share">
-              <Share2 size={18} color="#fff" />
-            </button>
-          </div>
-        )}
-
         {/* Icon button row centered */}
         <div style={{ ...styles.pill, padding: '4px', gap: 4, alignSelf: 'center' }}>
-          {onRawLayout && (
-            <button
-              style={{ ...styles.modeBtn, background: !isCanvasMode ? 'rgba(255,255,255,0.15)' : 'transparent' }}
-              onClick={onRawLayout}
-              title="Raw Layout"
-            >
-              <FileImage size={18} color="#fff" />
-            </button>
-          )}
-
-          <button
-            style={{
-              ...styles.modeBtn,
-              background: is3DActive ? 'rgba(255,255,255,0.15)' : (is2DActive ? 'rgba(255,255,255,0.15)' : 'transparent'),
-              fontWeight: 800,
-              fontSize: '0.9rem',
-              minWidth: 44,
-            }}
-            onClick={() => {
-              if (isCanvasMode && !isTopDownView) {
-                setIsTopDownView(true);
-              } else {
-                setIsCanvasMode(true);
-                setIsTopDownView(false);
-              }
-            }}
-            title={is3DActive ? "Switch to 2D" : "Switch to 3D"}
-          >
-            {is3DActive ? '2D' : '3D'}
-          </button>
-
-          {/* Status Toggle (mobile) */}
-          {statusToggle}
-
-          <button
-            style={styles.modeBtn}
-            onClick={() => { if (onFit) onFit(); }}
-            title="Home / Fit to Screen"
-          >
-            <Home size={18} color="#fff" />
-          </button>
+          {primaryControls}
         </div>
 
         {/* Search Bar */}
@@ -204,9 +153,14 @@ export const FloatingUI = ({
           <div style={{ ...styles.searchPill, width: '100%', maxWidth: 340 }}>
             <SearchIcon size={16} color="rgba(255,255,255,0.5)" style={{ flexShrink: 0, marginLeft: 4 }} />
             <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search Plot"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setSearchQuery(localSearch);
+                }
+              }}
+              placeholder="Search Plot (Press Enter)"
               style={{ ...styles.searchInput, width: '100%' }}
             />
           </div>
@@ -294,21 +248,6 @@ const styles = {
     boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
     padding: '10px 14px',
     gap: 8,
-  },
-  circleBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: '50%',
-    border: '1px solid rgba(255,255,255,0.1)',
-    background: 'rgba(20, 20, 20, 0.8)',
-    backdropFilter: 'blur(16px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    pointerEvents: 'auto',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-    transition: 'transform 0.2s ease',
   },
   searchInput: {
     background: 'transparent',

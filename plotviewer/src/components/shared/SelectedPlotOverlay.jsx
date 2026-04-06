@@ -2,9 +2,13 @@ import React from "react";
 import { Group, Line, Text } from "react-konva";
 import PlotShape from "./PlotShape";
 import { getPlotBounds, getPlotCenter } from "../../utils/plotGeometry";
+import {
+  LAYOUT_MAP_COLORS,
+  LAYOUT_MAP_FONT_FAMILY,
+} from "../../theme/layoutMapTheme";
 
 const WHITE = "#ffffff";
-const REFERENCE_BLUE = "#2D89EF";
+const REFERENCE_BLUE = LAYOUT_MAP_COLORS.selectedPlot;
 const SHADOW = "#0f172a";
 
 const formatNumericValue = (value) => {
@@ -118,8 +122,8 @@ const SelectedPlotOverlay = ({ plot, statusStyle }) => {
       {/* Width labels (top and bottom edges) — in meters */}
       {showHorizontalLabels && (
         <>
-          <Text x={bounds.x} y={bounds.y - detailFontSize * 0.8} width={bounds.width} align="center" text={widthLabel} fontSize={detailFontSize} fill={WHITE} fontStyle="bold" listening={false} {...labelShadowProps} />
-          <Text x={bounds.x} y={bounds.y + bounds.height - detailFontSize * 0.2} width={bounds.width} align="center" text={widthLabel} fontSize={detailFontSize} fill={WHITE} fontStyle="bold" listening={false} {...labelShadowProps} />
+          <Text x={bounds.x} y={bounds.y - detailFontSize * 0.8} width={bounds.width} align="center" text={widthLabel} fontSize={detailFontSize} fontFamily={LAYOUT_MAP_FONT_FAMILY} fill={WHITE} fontStyle="bold" listening={false} {...labelShadowProps} />
+          <Text x={bounds.x} y={bounds.y + bounds.height - detailFontSize * 0.2} width={bounds.width} align="center" text={widthLabel} fontSize={detailFontSize} fontFamily={LAYOUT_MAP_FONT_FAMILY} fill={WHITE} fontStyle="bold" listening={false} {...labelShadowProps} />
         </>
       )}
 
@@ -127,10 +131,10 @@ const SelectedPlotOverlay = ({ plot, statusStyle }) => {
       {showVerticalLabels && (
         <>
           <Group x={bounds.x + edgeInset} y={center.y} rotation={-90} listening={false}>
-            <Text x={-bounds.height / 2} y={-detailFontSize / 1.25} width={bounds.height} align="center" text={heightLabel} fontSize={detailFontSize} fill={WHITE} fontStyle="bold" {...labelShadowProps} />
+            <Text x={-bounds.height / 2} y={-detailFontSize / 1.25} width={bounds.height} align="center" text={heightLabel} fontSize={detailFontSize} fontFamily={LAYOUT_MAP_FONT_FAMILY} fill={WHITE} fontStyle="bold" {...labelShadowProps} />
           </Group>
           <Group x={bounds.x + bounds.width - edgeInset} y={center.y} rotation={90} listening={false}>
-            <Text x={-bounds.height / 2} y={-detailFontSize / 1.25} width={bounds.height} align="center" text={heightLabel} fontSize={detailFontSize} fill={WHITE} fontStyle="bold" {...labelShadowProps} />
+            <Text x={-bounds.height / 2} y={-detailFontSize / 1.25} width={bounds.height} align="center" text={heightLabel} fontSize={detailFontSize} fontFamily={LAYOUT_MAP_FONT_FAMILY} fill={WHITE} fontStyle="bold" {...labelShadowProps} />
           </Group>
         </>
       )}
@@ -143,6 +147,7 @@ const SelectedPlotOverlay = ({ plot, statusStyle }) => {
         align="center"
         text={plotLabel}
         fontSize={plotNoFontSize}
+        fontFamily={LAYOUT_MAP_FONT_FAMILY}
         fill={WHITE}
         fontStyle="bold"
         listening={false}
@@ -161,6 +166,7 @@ const SelectedPlotOverlay = ({ plot, statusStyle }) => {
           align="center"
           text={areaSqM}
           fontSize={detailFontSize}
+          fontFamily={LAYOUT_MAP_FONT_FAMILY}
           fill={WHITE}
           fontStyle="bold"
           listening={false}
@@ -177,6 +183,7 @@ const SelectedPlotOverlay = ({ plot, statusStyle }) => {
           align="center"
           text={areaYd}
           fontSize={secondaryFontSize}
+          fontFamily={LAYOUT_MAP_FONT_FAMILY}
           fill={WHITE}
           fontStyle="bold"
           listening={false}

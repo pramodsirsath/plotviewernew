@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, Text } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import API from "../../services/api";
 import { resolveServerUrl } from "../../config/runtime";
@@ -9,29 +9,67 @@ import { FloatingUI } from "../shared/FloatingUI";
 import { RenderProp } from "../shared/Props3D";
 import CompassIndicator from "../shared/CompassIndicator";
 import MapReadOnlyView from "../shared/MapReadOnlyView";
+import GroundTextLabel3D from "../shared/GroundTextLabel3D";
+import CameraAngleController from "../shared/CameraAngleController";
+import FitToLayoutController from "../shared/FitToLayoutController";
+import useIsCoarsePointer from "../shared/useIsCoarsePointer";
 import { getPlotBounds, getPlotCenter } from "../../utils/plotGeometry";
+import {
+  blendHexColors,
+  LAYOUT_MAP_COLORS,
+  LAYOUT_STATUS_COLORS,
+} from "../../theme/layoutMapTheme";
 
 const SCALE3D = 0.05;
-const CAMERA_ANIMATION_DURATION = 2000;
+const CAMERA_ANIMATION_DURATION = 1000;
 const STATUS_WAVE_DURATION = 1800;
-const CREAM_COLOR = "#E8E2CD";
-const STATUS_COLORS = {
-  Available: "#22c55e",
-  Reserved: "#f59e0b",
-  Sold: "#ef4444",
-};
+const BASE_AZIMUTH = -Math.PI / 4;
+const POLAR_3D = Math.PI / 4;
+const POLAR_EPS = 0.0005;
+const TOP_DOWN_POLAR_EPS = 0.0001;
+const DEFAULT_TOUCH_CONTROLS = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+const MOBILE_TOUCH_CONTROLS = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
 
 // --- Shared 3D Components ---
-function CameraAnimator({ cameraTargetPlot, isTopDownView, image, layout }) {
+function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnimating, fitLocked }) {
   const { camera, controls } = useThree();
   React.useEffect(() => {
+    if (angleAnimating || fitLocked) return; // don't run camera animations while angle animation/fit lock is running
     if (cameraTargetPlot === undefined) return;
     if (!controls || !image || !layout) return;
     const analysisW = layout.meta?.analysisWidth || image.width;
     const analysisH = layout.meta?.analysisHeight || image.height;
     let frame, cancelled = false;
+
+    // Save previous control constraints/state
+    const prevEnableRotate = controls.enableRotate;
+    const prevEnablePan = controls.enablePan;
+    const prevMinPolar = controls.minPolarAngle;
+    const prevMaxPolar = controls.maxPolarAngle;
+    const prevMinAz = typeof controls.minAzimuthAngle !== 'undefined' ? controls.minAzimuthAngle : null;
+    const prevMaxAz = typeof controls.maxAzimuthAngle !== 'undefined' ? controls.maxAzimuthAngle : null;
+
+    // Relax constraints & disable interactions while animating
+    controls.enableRotate = false;
+    controls.enablePan = false;
+    controls.minPolarAngle = 0;
+    controls.maxPolarAngle = Math.PI / 2 - 0.0001;
+    controls.minAzimuthAngle = -Math.PI;
+    controls.maxAzimuthAngle = Math.PI;
+    controls.update();
+
     const startTarget = controls.target.clone();
     const startPos = camera.position.clone();
+    const getSpherical = (position, target) => {
+      const offset = position.clone().sub(target);
+      const distance = Math.max(offset.length(), 0.0001);
+
+      return {
+        distance,
+        azimuth: Math.atan2(offset.x, offset.z),
+      };
+    };
+    const startSph = getSpherical(startPos, startTarget);
     const startTime = performance.now();
     let endTarget, endPos;
     if (cameraTargetPlot) {
@@ -39,15 +77,53 @@ function CameraAnimator({ cameraTargetPlot, isTopDownView, image, layout }) {
       const cz = getPlotCenter(cameraTargetPlot).y * SCALE3D - (analysisH * SCALE3D) / 2;
       endTarget = new THREE.Vector3(cx, 0, cz);
       const bounds = getPlotBounds(cameraTargetPlot);
-      const maxD = Math.max(bounds.width, bounds.height) * SCALE3D;
-      const dist = Math.max(15, maxD * 1.6);
-      endPos = new THREE.Vector3();
-      if (isTopDownView) endPos.set(cx, dist, cz + 0.001);
-      else endPos.set(cx - dist * 0.4, dist * 0.8, cz + dist * 0.8);
+      const width = Math.max(0.0001, bounds.width * SCALE3D);
+      const height = Math.max(0.0001, bounds.height * SCALE3D);
+      const fillFraction = 0.82;
+      const fov = ((camera.fov || 45) * Math.PI) / 180;
+      const aspect = camera.aspect || (window.innerWidth / window.innerHeight);
+      const tanFov2 = Math.tan(fov / 2);
+      const halfH = height / 2;
+      const halfW = width / 2;
+      const distV = halfH / (tanFov2 * fillFraction);
+      const distH = halfW / (tanFov2 * aspect * fillFraction);
+      const dist = Math.max(4.5, Math.max(distV, distH));
+      if (isTopDown) {
+        const azimuth = startSph.azimuth || BASE_AZIMUTH;
+        endPos = new THREE.Vector3(
+          endTarget.x + dist * Math.sin(TOP_DOWN_POLAR_EPS) * Math.sin(azimuth),
+          endTarget.y + dist * Math.cos(TOP_DOWN_POLAR_EPS),
+          endTarget.z + dist * Math.sin(TOP_DOWN_POLAR_EPS) * Math.cos(azimuth)
+        );
+      } else {
+        const polar = POLAR_3D;
+        const azimuth = startSph.azimuth || BASE_AZIMUTH;
+        endPos = new THREE.Vector3(
+          endTarget.x + dist * Math.sin(polar) * Math.sin(azimuth),
+          endTarget.y + dist * Math.cos(polar),
+          endTarget.z + dist * Math.sin(polar) * Math.cos(azimuth)
+        );
+      }
     } else {
       endTarget = new THREE.Vector3(0, 0, 0);
-      const overviewH = Math.max(analysisH * SCALE3D * 1.5, 50);
-      endPos = new THREE.Vector3(0, isTopDownView ? overviewH : overviewH * 0.6, isTopDownView ? 0.001 : (analysisH * SCALE3D) / 2 + 40);
+      const overviewH = Math.max(analysisH * SCALE3D * 1.6, 50);
+      if (isTopDown) {
+        const azimuth = startSph.azimuth || BASE_AZIMUTH;
+        endPos = new THREE.Vector3(
+          overviewH * Math.sin(TOP_DOWN_POLAR_EPS) * Math.sin(azimuth),
+          overviewH * Math.cos(TOP_DOWN_POLAR_EPS),
+          overviewH * Math.sin(TOP_DOWN_POLAR_EPS) * Math.cos(azimuth)
+        );
+      } else {
+        const dist = overviewH * 1.2;
+        const polar = POLAR_3D;
+        const azimuth = startSph.azimuth || BASE_AZIMUTH;
+        endPos = new THREE.Vector3(
+          dist * Math.sin(polar) * Math.sin(azimuth),
+          dist * Math.cos(polar),
+          dist * Math.sin(polar) * Math.cos(azimuth)
+        );
+      }
     }
     const cancelOnInteract = () => { cancelled = true; };
     controls.addEventListener('start', cancelOnInteract);
@@ -60,10 +136,24 @@ function CameraAnimator({ cameraTargetPlot, isTopDownView, image, layout }) {
       camera.position.lerpVectors(startPos, endPos, ease);
       controls.update();
       if (t < 1) frame = requestAnimationFrame(animate);
+      else {
+        // reapply final constraints
+        controls.minPolarAngle = isTopDown ? 0 : POLAR_3D - POLAR_EPS;
+        controls.maxPolarAngle = isTopDown ? 0 : POLAR_3D + POLAR_EPS;
+        controls.minAzimuthAngle = -Infinity;
+        controls.maxAzimuthAngle = Infinity;
+        controls.enableRotate = isTopDown ? false : prevEnableRotate;
+        controls.enablePan = prevEnablePan;
+        controls.update();
+      }
     };
     frame = requestAnimationFrame(animate);
-    return () => { cancelled = true; controls.removeEventListener('start', cancelOnInteract); if (frame) cancelAnimationFrame(frame); };
-  }, [cameraTargetPlot, isTopDownView, camera, controls, image]);
+    return () => { cancelled = true; controls.removeEventListener('start', cancelOnInteract); if (frame) cancelAnimationFrame(frame);
+      // restore previous values in case of early cancel
+      controls.minPolarAngle = prevMinPolar; controls.maxPolarAngle = prevMaxPolar;
+      if (prevMinAz !== null) controls.minAzimuthAngle = prevMinAz; if (prevMaxAz !== null) controls.maxAzimuthAngle = prevMaxAz;
+      controls.enableRotate = prevEnableRotate; controls.enablePan = prevEnablePan; controls.update(); };
+  }, [cameraTargetPlot, camera, controls, image, layout]);
   return null;
 }
 
@@ -140,23 +230,13 @@ const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onCl
 
   // Wave transition color: blend between cream and status color spatially
   const plotColor = React.useMemo(() => {
-    if (isSelected) return "#3b82f6";
-    const statusColor = STATUS_COLORS[plot.status] || CREAM_COLOR;
-    
-    if (statusRevealProgress <= 0) return CREAM_COLOR;
+    if (isSelected) return LAYOUT_MAP_COLORS.selectedPlot;
+    const statusColor = LAYOUT_STATUS_COLORS[plot.status] || LAYOUT_MAP_COLORS.plot;
+
+    if (statusRevealProgress <= 0) return LAYOUT_MAP_COLORS.plot;
     if (statusRevealProgress >= 1) return statusColor;
 
-    // Blend
-    const creamRGB = { r: 232, g: 226, b: 205 };
-    const statusRGB = {
-      r: parseInt(statusColor.slice(1, 3), 16),
-      g: parseInt(statusColor.slice(3, 5), 16),
-      b: parseInt(statusColor.slice(5, 7), 16),
-    };
-    const r = Math.round(creamRGB.r + (statusRGB.r - creamRGB.r) * statusRevealProgress);
-    const g = Math.round(creamRGB.g + (statusRGB.g - creamRGB.g) * statusRevealProgress);
-    const b = Math.round(creamRGB.b + (statusRGB.b - creamRGB.b) * statusRevealProgress);
-    return `rgb(${r},${g},${b})`;
+    return blendHexColors(LAYOUT_MAP_COLORS.plot, statusColor, statusRevealProgress);
   }, [isSelected, plot.status, showStatus, statusRevealProgress]);
 
   const center = getPlotCenter(plot);
@@ -172,34 +252,27 @@ const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onCl
         <meshStandardMaterial color={plotColor} roughness={1} metalness={0} transparent={isDimmed} opacity={isDimmed ? 0.25 : 1} />
         <lineSegments raycast={() => null} transparent={isDimmed} opacity={isDimmed ? 0.25 : 1}>
           <edgesGeometry attach="geometry" args={[geometry]} />
-          <lineBasicMaterial attach="material" color="#1a1a1a" linewidth={1} />
+          <lineBasicMaterial attach="material" color={LAYOUT_MAP_COLORS.plotNumber} linewidth={1} />
         </lineSegments>
       </mesh>
       {plot.plotNo && (
-        <Text
+        <GroundTextLabel3D
+          text={plot.plotNo}
           position={[center.x * SCALE3D, isSelected ? 0.12 : 0.06, center.y * SCALE3D]}
           rotation={[-Math.PI / 2, 0, 0]}
           fontSize={labelSize}
-          color={isSelected ? '#ffffff' : '#1a1a1a'}
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.02}
-          outlineColor={isSelected ? '#3b82f6' : CREAM_COLOR}
-          font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZJhjp-Ek-_EeA.woff"
-          fillOpacity={isDimmed ? 0.25 : 1}
-          outlineOpacity={isDimmed ? 0.25 : 1}
+          color={isSelected ? LAYOUT_MAP_COLORS.white : LAYOUT_MAP_COLORS.plotNumber}
+          opacity={isDimmed ? 0.25 : 1}
           depthWrite={false}
           renderOrder={1}
           raycast={() => null}
-        >
-          {plot.plotNo}
-        </Text>
+        />
       )}
     </group>
   );
 });
 
-function BoundaryMesh({ boundary, meta, isDimOverlay }) {
+function BoundaryMesh({ boundary, meta }) {
   const geometry = React.useMemo(() => {
     const shape = new THREE.Shape();
     if (boundary && boundary.length > 0) {
@@ -212,8 +285,7 @@ function BoundaryMesh({ boundary, meta, isDimOverlay }) {
     }
     return new THREE.ShapeGeometry(shape);
   }, [boundary, meta]);
-  if (isDimOverlay) return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.07, 0]} raycast={() => null}><meshBasicMaterial color="#000000" transparent opacity={0.65} /></mesh>;
-  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}><meshStandardMaterial color="#3f3f3f" roughness={1} /></mesh>;
+  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}><meshStandardMaterial color={LAYOUT_MAP_COLORS.background} roughness={1} /></mesh>;
 }
 
 function CompoundWall({ boundary, meta }) {
@@ -242,7 +314,7 @@ function CompoundWall({ boundary, meta }) {
     return geo;
   }, [boundary, meta]);
   if (!wallGeometry) return null;
-  return <mesh geometry={wallGeometry}><meshStandardMaterial color="#8B7355" roughness={0.85} metalness={0.05} side={THREE.DoubleSide} /></mesh>;
+  return <mesh geometry={wallGeometry}><meshStandardMaterial color={LAYOUT_MAP_COLORS.compoundWall} roughness={0.85} metalness={0.05} side={THREE.DoubleSide} /></mesh>;
 }
 
 // --- Main Component ---
@@ -251,7 +323,6 @@ const PublicLayoutView = () => {
   const [layout, setLayout] = useState(null);
   const [image, setImage] = useState(null);
   const [selectedPlot, setSelectedPlot] = useState(null);
-  const [isTopDownView, setIsTopDownView] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [cameraAzimuth, setCameraAzimuth] = useState(0);
   const [cameraTargetPlot, setCameraTargetPlot] = useState(undefined);
@@ -263,6 +334,12 @@ const PublicLayoutView = () => {
   const [statusRevealProgress, setStatusRevealProgress] = useState(0);
   const [navigateNorthTrigger, setNavigateNorthTrigger] = useState(0);
   const statusAnimRef = React.useRef(null);
+  const controlsRef = useRef();
+  const [isTopDown, setIsTopDown] = useState(false);
+  const [angleAnimating, setAngleAnimating] = useState(false);
+  const [fitKey, setFitKey] = useState(0);
+  const [fitLocked, setFitLocked] = useState(false);
+  const isCoarsePointer = useIsCoarsePointer();
 
   useEffect(() => {
     const fetchLayout = async () => {
@@ -303,13 +380,26 @@ const PublicLayoutView = () => {
 
   const fitToScreen = () => {
     setSelectedPlot(null);
-    setCameraTargetPlot(null);
+    setCameraTargetPlot(undefined);
+    setFitLocked(false);
+    setAngleAnimating(true);
+    setFitKey((k) => k + 1);
   };
 
   const focusPlot = (plot) => {
+    setFitLocked(false);
     setSelectedPlot(plot);
     setCameraTargetPlot(plot);
   };
+
+  // Clear fit lock when user interacts with controls (so Home persists until user starts interacting)
+  useEffect(() => {
+    const c = controlsRef.current;
+    if (!c) return;
+    const onStart = () => setFitLocked(false);
+    c.addEventListener('start', onStart);
+    return () => c.removeEventListener('start', onStart);
+  }, [controlsRef]);
 
   useEffect(() => {
     if (searchQuery && layout?.plots) {
@@ -320,7 +410,7 @@ const PublicLayoutView = () => {
 
   const handleShare = () => { navigator.clipboard?.writeText(window.location.href); };
 
-  if (!layout || !image) return <div style={{ height: '100vh', background: '#0b1120' }} />;
+  if (!layout || !image) return <div style={{ height: '100vh', background: LAYOUT_MAP_COLORS.background }} />;
 
   const imageCenterX = image.width / 2;
   const imageCenterY = image.height / 2;
@@ -341,12 +431,13 @@ const PublicLayoutView = () => {
 
       <FloatingUI
         isCanvasMode={true} setIsCanvasMode={() => {}}
-        isTopDownView={isTopDownView} setIsTopDownView={setIsTopDownView}
         onFit={fitToScreen} onShare={handleShare}
         onOpenGallery={() => setShowGallery(true)} onOpenInfo={() => setShowInfo(true)}
         onLocate={() => setShowMap(true)}
         searchQuery={searchQuery} setSearchQuery={setSearchQuery} showExtraActions={true}
         showStatus={showStatus} setShowStatus={setShowStatus}
+        isTopDown={isTopDown}
+        onToggleTopDown={() => setIsTopDown((s) => !s)}
       />
 
       {/* Selected plot info */}
@@ -356,7 +447,7 @@ const PublicLayoutView = () => {
             <h4 style={{ marginTop: 0, marginBottom: 6, color: '#fff', fontFamily: "'Outfit','Inter',sans-serif" }}>Plot {selectedPlot.plotNo || "-"}</h4>
             <button onClick={() => { setSelectedPlot(null); setCameraTargetPlot(undefined); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1 }}>×</button>
           </div>
-          <p style={styles.infoText}>Status: <span style={{ fontWeight: 700, color: selectedPlot.status === 'Sold' ? '#ef4444' : selectedPlot.status === 'Reserved' ? '#f59e0b' : '#22c55e' }}>{selectedPlot.status}</span></p>
+          <p style={styles.infoText}>Status: <span style={{ fontWeight: 700, color: LAYOUT_STATUS_COLORS[selectedPlot.status] || LAYOUT_STATUS_COLORS.Available }}>{selectedPlot.status}</span></p>
           <p style={styles.infoText}>Area: {selectedPlot.area || 0} sq.ft / {((selectedPlot.area || 0) * 0.092903).toFixed(1)} m²</p>
           <p style={styles.infoText}>Size: {selectedPlot.plotWidth || "-"} × {selectedPlot.plotHeight || "-"} ft</p>
           {selectedPlot.category && selectedPlot.category !== "Standard" && (
@@ -376,17 +467,18 @@ const PublicLayoutView = () => {
             camera={{ position: [0, Math.max(metaObj.analysisHeight * SCALE3D * 1.5, 50), metaObj.analysisHeight * SCALE3D / 2 + 40], fov: 45 }}
             style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0, cursor: 'default', touchAction: 'none' }}
             onPointerMissed={() => { setSelectedPlot(null); setCameraTargetPlot(undefined); }}>
-            <color attach="background" args={['#0b1120']} />
+            <color attach="background" args={[LAYOUT_MAP_COLORS.background]} />
             <ambientLight intensity={0.7} />
             <hemisphereLight args={['#b1e1ff', '#b97a20', 0.5]} />
             <directionalLight position={[50, 150, 50]} intensity={1.0} />
-            <CameraAnimator cameraTargetPlot={cameraTargetPlot} isTopDownView={isTopDownView} image={image} layout={layout} />
+            <CameraAnimator cameraTargetPlot={cameraTargetPlot} image={image} layout={layout} isTopDown={isTopDown} angleAnimating={angleAnimating} fitLocked={fitLocked} />
+            <CameraAngleController isTopDown={isTopDown} controlsRef={controlsRef} duration={360} onStart={() => setAngleAnimating(true)} onComplete={() => setAngleAnimating(false)} />
+            <FitToLayoutController fitKey={fitKey} isTopDown={isTopDown} image={image} layout={layout} scale={SCALE3D} duration={1600} onStart={() => setAngleAnimating(true)} onComplete={() => { setAngleAnimating(false); setFitLocked(true); }} />
             <CameraRotationTracker onAngleChange={setCameraAzimuth} />
             <NavigateToNorth trigger={navigateNorthTrigger} onDone={() => {}} />
             <group position={[-(metaObj.analysisWidth * SCALE3D) / 2, 0, -(metaObj.analysisHeight * SCALE3D) / 2]}>
               <BoundaryMesh boundary={layout.boundary} meta={metaObj} />
               <CompoundWall boundary={layout.boundary} meta={metaObj} />
-              {selectedPlot && isTopDownView && <BoundaryMesh boundary={layout.boundary} meta={metaObj} isDimOverlay={true} />}
               {layout.plots.map((plot) => {
                 const plotCenter = getPlotCenter(plot);
                 const normalizedX = plotCenter.x / metaObj.analysisWidth;
@@ -395,8 +487,9 @@ const PublicLayoutView = () => {
               })}
             </group>
             {(layout.props3D || []).map((item) => <RenderProp key={item.id} item={item} onClick={(i, e) => e.stopPropagation()} isSelected={false} transformMode="translate" onTransformEnd={() => {}} />)}
-            <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={isTopDownView ? 0.001 : Math.PI / 2 - 0.05} enableRotate enablePan enableDamping={true} dampingFactor={0.08} minDistance={5} maxDistance={metaObj.analysisHeight * SCALE3D * 3} />
+            <OrbitControls ref={controlsRef} makeDefault touches={isCoarsePointer ? MOBILE_TOUCH_CONTROLS : DEFAULT_TOUCH_CONTROLS} minPolarAngle={POLAR_3D - POLAR_EPS} maxPolarAngle={POLAR_3D + POLAR_EPS} minAzimuthAngle={-Infinity} maxAzimuthAngle={Infinity} enableRotate={true} enablePan enableDamping={true} dampingFactor={0.08} minDistance={5} maxDistance={metaObj.analysisHeight * SCALE3D * 3} />
           </Canvas>
+          {angleAnimating && <div style={{ position: 'absolute', inset: 0, zIndex: 60, pointerEvents: 'auto', background: 'transparent' }} />}
         </div>
       )}
 
@@ -444,14 +537,8 @@ const PublicLayoutView = () => {
   );
 };
 
-const STATUS_STYLES = {
-  Available: { fill: "rgba(148, 227, 148, 0.76)", solid: "#94e394", selectedFill: "#2D89EF" },
-  Reserved: { fill: "rgba(184, 139, 74, 0.76)", solid: "#B88B4A", selectedFill: "#2D89EF" },
-  Sold: { fill: "rgba(160, 67, 67, 0.78)", solid: "#A04343", selectedFill: "#2D89EF" },
-};
-
 const styles = {
-  page: { height: "100vh", background: "#0b1120", position: "relative", overflow: "hidden" },
+  page: { height: "100vh", background: LAYOUT_MAP_COLORS.background, position: "relative", overflow: "hidden" },
   titleBar: {
     position: 'absolute', top: 16, left: 16, zIndex: 20,
     display: 'flex', alignItems: 'center', gap: 10,
