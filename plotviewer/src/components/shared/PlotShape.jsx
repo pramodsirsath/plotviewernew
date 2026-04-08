@@ -1,6 +1,6 @@
 import React from "react";
 import { Line, Rect } from "react-konva";
-import { getPlotBounds, getPlotPoints, hasPolygonPoints } from "../../utils/plotGeometry";
+import { getPlotBounds, getPlotRenderPoints, hasPolygonPoints } from "../../utils/plotGeometry";
 
 /**
  * PlotShape renders either a polygon (Line) or rectangle (Rect) for a plot.
@@ -20,10 +20,11 @@ const PlotShape = ({
   hitStrokeWidth = 0,
   draggable = false,
   onDragStart,
+  onDragMove,
   onDragEnd,
 }) => {
   if (hasPolygonPoints(plot)) {
-    const plotPoints = getPlotPoints(plot);
+    const plotPoints = getPlotRenderPoints(plot);
 
     return (
       <Line
@@ -33,7 +34,7 @@ const PlotShape = ({
         stroke={stroke}
         strokeWidth={strokeWidth}
         dash={dash}
-        tension={plot.isCurved ? 0.35 : 0}
+        tension={0}
         lineJoin="round"
         lineCap="round"
         miterLimit={8}
@@ -42,6 +43,7 @@ const PlotShape = ({
         listening={listening}
         draggable={draggable}
         onDragStart={onDragStart}
+        onDragMove={onDragMove}
         onDragEnd={onDragEnd}
         onClick={onClick}
         onTap={onTap}
@@ -78,6 +80,7 @@ const PlotShape = ({
       listening={listening}
       draggable={draggable}
       onDragStart={onDragStart}
+      onDragMove={onDragMove}
       onDragEnd={onDragEnd}
       onClick={onClick}
       onTap={onTap}

@@ -8,7 +8,6 @@ import {
 } from "../../theme/layoutMapTheme";
 
 const WHITE = "#ffffff";
-const REFERENCE_BLUE = LAYOUT_MAP_COLORS.selectedPlot;
 const SHADOW = "#0f172a";
 
 const formatNumericValue = (value) => {
@@ -70,7 +69,7 @@ const getCenterTextLayout = (bounds) => {
   return { plotNoFontSize, detailFontSize, secondaryFontSize, labelWidth };
 };
 
-const SelectedPlotOverlay = ({ plot, statusStyle }) => {
+const SelectedPlotOverlay = ({ plot, statusStyle, theme = LAYOUT_MAP_COLORS }) => {
   const bounds = getPlotBounds(plot);
   const center = getPlotCenter(plot);
   const widthLabel = formatDimensionLabel(plot?.plotWidth);
@@ -78,7 +77,7 @@ const SelectedPlotOverlay = ({ plot, statusStyle }) => {
   const areaSqM = formatAreaSqM(plot?.area);
   const areaYd = formatAreaYd(plot?.area);
   const plotLabel = plot?.plotNo ? String(plot.plotNo) : "Plot";
-  const selectedFill = statusStyle?.selectedFill || REFERENCE_BLUE;
+  const selectedFill = statusStyle?.selectedFill || theme.selectedPlot;
   const { plotNoFontSize, detailFontSize, secondaryFontSize, labelWidth } = getCenterTextLayout(bounds);
   const edgeInset = Math.max(10, Math.min(Math.min(bounds.width, bounds.height) * 0.12, 16));
   const cornerTick = Math.max(8, Math.min(Math.min(bounds.width, bounds.height) * 0.08, 15));
@@ -101,23 +100,23 @@ const SelectedPlotOverlay = ({ plot, statusStyle }) => {
         plot={plot}
         fill={selectedFill}
         stroke={WHITE}
-        strokeWidth={1}
+        strokeWidth={0.8}
         listening={false}
       />
       <PlotShape
         plot={plot}
         fill="transparent"
         stroke={WHITE}
-        strokeWidth={1.6}
+        strokeWidth={1.15}
         dash={[7, 7]}
         listening={false}
       />
 
       {/* Corner tick marks */}
-      <Line points={[bounds.x - cornerTick, bounds.y, bounds.x, bounds.y, bounds.x, bounds.y - cornerTick]} stroke={WHITE} strokeWidth={1.4} lineCap="square" listening={false} />
-      <Line points={[bounds.x + bounds.width + cornerTick, bounds.y, bounds.x + bounds.width, bounds.y, bounds.x + bounds.width, bounds.y - cornerTick]} stroke={WHITE} strokeWidth={1.4} lineCap="square" listening={false} />
-      <Line points={[bounds.x - cornerTick, bounds.y + bounds.height, bounds.x, bounds.y + bounds.height, bounds.x, bounds.y + bounds.height + cornerTick]} stroke={WHITE} strokeWidth={1.4} lineCap="square" listening={false} />
-      <Line points={[bounds.x + bounds.width + cornerTick, bounds.y + bounds.height, bounds.x + bounds.width, bounds.y + bounds.height, bounds.x + bounds.width, bounds.y + bounds.height + cornerTick]} stroke={WHITE} strokeWidth={1.4} lineCap="square" listening={false} />
+      <Line points={[bounds.x - cornerTick, bounds.y, bounds.x, bounds.y, bounds.x, bounds.y - cornerTick]} stroke={WHITE} strokeWidth={1.0} lineCap="square" listening={false} />
+      <Line points={[bounds.x + bounds.width + cornerTick, bounds.y, bounds.x + bounds.width, bounds.y, bounds.x + bounds.width, bounds.y - cornerTick]} stroke={WHITE} strokeWidth={1.0} lineCap="square" listening={false} />
+      <Line points={[bounds.x - cornerTick, bounds.y + bounds.height, bounds.x, bounds.y + bounds.height, bounds.x, bounds.y + bounds.height + cornerTick]} stroke={WHITE} strokeWidth={1.0} lineCap="square" listening={false} />
+      <Line points={[bounds.x + bounds.width + cornerTick, bounds.y + bounds.height, bounds.x + bounds.width, bounds.y + bounds.height, bounds.x + bounds.width, bounds.y + bounds.height + cornerTick]} stroke={WHITE} strokeWidth={1.0} lineCap="square" listening={false} />
 
       {/* Width labels (top and bottom edges) — in meters */}
       {showHorizontalLabels && (

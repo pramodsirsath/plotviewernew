@@ -34,9 +34,6 @@ export default function CameraAngleController({
     let fromTheta = typeof activeControls.getAzimuthalAngle === 'function'
       ? activeControls.getAzimuthalAngle()
       : sph.theta;
-    if (sph.phi < EPS && anim.current.savedTheta != null) {
-      fromTheta = anim.current.savedTheta;
-    }
 
     // store original control constraints/state once (so repeated toggles restore correctly)
     if (typeof anim.current.origMinPolar === 'undefined' || anim.current.origMinPolar === null) {
@@ -106,11 +103,14 @@ export default function CameraAngleController({
       if (isTopDown) {
         activeControls.minPolarAngle = targetPhi2D;
         activeControls.maxPolarAngle = targetPhi2D;
-        activeControls.enableRotate = false;
+        // allow azimuth rotation (spin around) in 2D/top-down — lock only the polar (tilt)
+        activeControls.enableRotate = true;
       } else {
-        if (typeof anim.current.origMinPolar !== 'undefined' && anim.current.origMinPolar !== null) activeControls.minPolarAngle = anim.current.origMinPolar;
-        if (typeof anim.current.origMaxPolar !== 'undefined' && anim.current.origMaxPolar !== null) activeControls.maxPolarAngle = anim.current.origMaxPolar;
-        if (typeof anim.current.origEnableRotate !== 'undefined' && anim.current.origEnableRotate !== null) activeControls.enableRotate = anim.current.origEnableRotate;
+        // Lock polar angle to the configured 3D target (fix 45° view)
+        activeControls.minPolarAngle = targetPhi3D;
+        activeControls.maxPolarAngle = targetPhi3D;
+        // keep azimuth rotation enabled so user can spin around the layout
+        activeControls.enableRotate = true;
       }
       // restore damping and input handling
       try { activeControls.enableDamping = typeof anim.current.origEnableDamping !== 'undefined' ? anim.current.origEnableDamping : false; } catch (e) {}

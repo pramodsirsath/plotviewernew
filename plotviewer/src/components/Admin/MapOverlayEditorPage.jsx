@@ -1,27 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Copy, Navigation, Map as MapIcon, Save, ArrowLeft, Search } from "lucide-react";
 
 import API from "../../services/api";
 import { getLayoutCropBounds, generateLayoutSVG } from "../../utils/plotGeometry";
 import { createCustomOverlayClass } from "../../utils/CustomOverlay";
-
-const GOOGLE_MAPS_API_KEY = "AIzaSyB-njL0QCNaGM8yjJw3q3PZ1ZYncy9IclA";
-
-let googleMapsPromise = null;
-function loadGoogleMaps() {
-  if (googleMapsPromise) return googleMapsPromise;
-  if (window.google?.maps) return Promise.resolve(window.google.maps);
-  googleMapsPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=geometry`;
-    script.async = true; script.defer = true;
-    script.onload = () => resolve(window.google.maps);
-    script.onerror = () => reject(new Error("Failed to load Google Maps"));
-    document.head.appendChild(script);
-  });
-  return googleMapsPromise;
-}
+import { loadGoogleMaps } from "../../utils/googleMapsLoader";
 
 const MapOverlayEditorPage = () => {
   const { id } = useParams();
@@ -32,7 +16,7 @@ const MapOverlayEditorPage = () => {
   const overlayRef = useRef(null);
 
   const [layout, setLayout] = useState(null);
-  const [center, setCenter] = useState([23.0225, 72.5714]);
+  const [center, setCenter] = useState([19.846811, 75.890633]);
   const [rotation, setRotation] = useState(0);
   const [opacity, setOpacity] = useState(0.65);
   const [zoom, setZoom] = useState(18);
@@ -75,7 +59,7 @@ const MapOverlayEditorPage = () => {
       const map = new maps.Map(mapRef.current, {
         center: { lat: center[0], lng: center[1] },
         zoom: zoom,
-        mapTypeId: "satellite",
+        mapTypeId: "roadmap",
         disableDefaultUI: false,
         zoomControl: true,
         mapTypeControl: true,
@@ -94,7 +78,9 @@ const MapOverlayEditorPage = () => {
       setMessage("❌ Failed to load Google Maps");
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [loading, layout]);
 
   // Update overlay when params change
@@ -215,7 +201,7 @@ const MapOverlayEditorPage = () => {
                  type="text"
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
-                 placeholder="Search location (e.g. Ahmedabad)..."
+                 placeholder="Search location (e.g. Jalna)..."
                  style={styles.searchInput}
                />
                <button type="submit" style={styles.searchBtn}>Find</button>

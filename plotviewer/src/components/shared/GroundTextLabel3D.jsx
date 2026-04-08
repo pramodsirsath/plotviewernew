@@ -1,6 +1,8 @@
 import React from "react";
 import * as THREE from "three";
 import { LAYOUT_MAP_COLORS, LAYOUT_MAP_FONT_FAMILY } from "../../theme/layoutMapTheme";
+import { useThree } from "@react-three/fiber";
+
 
 let fontLoadPromise = null;
 
@@ -44,6 +46,10 @@ const GroundTextLabel3D = ({
   opacity = 1,
   renderOrder = 0,
   depthWrite = false,
+  depthTest = true,
+  polygonOffset = false,
+  polygonOffsetFactor = 0,
+  polygonOffsetUnits = 0,
   side = THREE.DoubleSide,
   alphaTest = 0.04,
   raycast,
@@ -146,6 +152,7 @@ const GroundTextLabel3D = ({
       rotation={rotation}
       renderOrder={renderOrder}
       raycast={raycast}
+      
     >
       <planeGeometry args={[worldWidth, worldHeight]} />
       <meshBasicMaterial
@@ -153,9 +160,14 @@ const GroundTextLabel3D = ({
         transparent
         opacity={opacity}
         depthWrite={depthWrite}
+        depthTest={depthTest}
+        polygonOffset={polygonOffset}
+        polygonOffsetFactor={polygonOffsetFactor}
+        polygonOffsetUnits={polygonOffsetUnits}
         side={side}
         alphaTest={alphaTest}
         toneMapped={false}
+        
       />
     </mesh>
   );

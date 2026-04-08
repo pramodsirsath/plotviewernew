@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import UploadLayout from "./components/Admin/UploadLayout";
 import AutoPlotEditor from "./components/Admin/AutoPlotEditor";
 import Editor3D from "./components/Admin/Editor3D";
-import MapOverlayEditorPage from "./components/Admin/MapOverlayEditorPage";
+import MapOverlayEditorPage from "./components/Admin/MapOverlayEditorPageStable";
 import PublicLayoutView from "./components/Customer/PublicLayoutView";
 import AdminDashboard from "./components/Admin/AdminDashboard";
 import Signup from "./components/auth/Signup";

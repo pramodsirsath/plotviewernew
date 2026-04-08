@@ -1,29 +1,75 @@
-import React from 'react';
-import * as THREE from 'three';
-import { getPlotBounds, getPlotCenter } from '../../utils/plotGeometry';
-import GroundTextLabel3D from './GroundTextLabel3D';
-import { LAYOUT_MAP_COLORS } from '../../theme/layoutMapTheme';
+import React from "react";
+import * as THREE from "three";
+import { Line as DreiLine } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
+import {
+  getPlotAreaSqFt,
+  getPlotAxisDimensionsFeet,
+  getPlotBounds,
+  getPlotCenter,
+  getPolygonEdgeMeasurements,
+  getPlotRenderPointObjects,
+  hasPolygonPoints,
+} from "../../utils/plotGeometry";
+import GroundTextLabel3D from "./GroundTextLabel3D";
+import { LAYOUT_MAP_COLORS } from "../../theme/layoutMapTheme";
 
 const POPUP_ANIMATION_DURATION = 1000;
+const OVERLAY_FILL_LIFT = 0.02;
+const OVERLAY_OUTLINE_LIFT = 0.055;
+const OVERLAY_TEXT_LIFT = 0.09;
+const OVERLAY_DIMENSION_LIFT = 0.065;
 
-const ftToMeters = (ft) => {
-  const parsed = Number(ft);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed * 0.3048;
-};
-
-
-const formatDimensionLabel = (value) => {
+const formatDisplayNumber = (value) => {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  const meters = ftToMeters(parsed);
-  if (!Number.isFinite(meters)) return null;
-  if (meters >= 10) return `${Math.round(meters)} m`;
-  return `${meters.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} m`;
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  if (Math.abs(parsed - Math.round(parsed)) < 0.01) {
+    return String(Math.round(parsed));
+  }
+
+  return parsed >= 10
+    ? parsed.toFixed(1).replace(/\.0$/, "")
+    : parsed.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 };
 
-export default function PlotSelection3D({ plot, scale = 0.05, elevation = 0.14 }) {
+const formatFeetLabel = (value) => {
+  const formatted = formatDisplayNumber(value);
+  return formatted ? `${formatted} ft` : null;
+};
+
+const formatMetersLabel = (value) => {
+  const formatted = formatDisplayNumber(value);
+  return formatted ? `${formatted} m` : null;
+};
+
+const formatAreaLabel = (value) => {
+  const formatted = formatDisplayNumber(value);
+  return formatted ? `${formatted} sq.ft` : null;
+};
+
+const getReadableEdgeRotation = (angleRadians) => {
+  let nextAngle = angleRadians;
+
+  if (nextAngle > Math.PI / 2) {
+    nextAngle -= Math.PI;
+  } else if (nextAngle < -Math.PI / 2) {
+    nextAngle += Math.PI;
+  }
+
+  return -nextAngle;
+};
+
+export default function PlotSelection3D({
+  plot,
+  scale = 0.05,
+  elevation = 0.14,
+  pixelToFt = 1,
+  theme = LAYOUT_MAP_COLORS,
+}) {
   const popupAnimStartRef = React.useRef(0);
   const lineRef = React.useRef(); // ✅ ADDED
     const popupRef = React.useRef(); // ✅ ADD THIS
@@ -33,19 +79,20 @@ export default function PlotSelection3D({ plot, scale = 0.05, elevation = 0.14 }
   const bounds = getPlotBounds(plot);
   const center = getPlotCenter(plot);
 
-  // Outline geometry (dashed)
-const outlineGeo = React.useMemo(() => {
+  // Outline & Fill geometry (dashed border + blue shape)
+const { outlinePoints, fillGeo } = React.useMemo(() => {
   const pts = [];
   const padding = 1; // 🔥 adjust this for spacing
+  const renderPoints = getPlotRenderPointObjects(plot);
 
-  if (plot.points && plot.points.length >= 6) {
+  if (renderPoints.length >= 3) {
     // ✅ For custom polygon → expand from center
     const centerX = bounds.x + bounds.width / 2;
     const centerY = bounds.y + bounds.height / 2;
 
-    for (let i = 0; i < plot.points.length; i += 2) {
-      const x = plot.points[i];
-      const y = plot.points[i + 1];
+    for (const point of renderPoints) {
+      const x = point.x;
+      const y = point.y;
 
       // push point slightly outward
       const dirX = x - centerX;
@@ -55,10 +102,8 @@ const outlineGeo = React.useMemo(() => {
       const newX = x + (dirX / len) * padding;
       const newY = y + (dirY / len) * padding;
 
-      pts.push(new THREE.Vector3(newX * scale, -newY * scale, 0));
+      pts.push(new THREE.Vector2(newX * scale, -newY * scale));
     }
-
-    pts.push(pts[0].clone());
   } else {
     // ✅ Rectangle case → simple padding
     const px = bounds.x - padding;
@@ -66,32 +111,42 @@ const outlineGeo = React.useMemo(() => {
     const pw = bounds.width + padding * 2;
     const ph = bounds.height + padding * 2;
 
-    pts.push(new THREE.Vector3(px * scale, -py * scale, 0));
-    pts.push(new THREE.Vector3((px + pw) * scale, -py * scale, 0));
-    pts.push(new THREE.Vector3((px + pw) * scale, -(py + ph) * scale, 0));
-    pts.push(new THREE.Vector3(px * scale, -(py + ph) * scale, 0));
-    pts.push(new THREE.Vector3(px * scale, -py * scale, 0));
+    pts.push(new THREE.Vector2(px * scale, -py * scale));
+    pts.push(new THREE.Vector2((px + pw) * scale, -py * scale));
+    pts.push(new THREE.Vector2((px + pw) * scale, -(py + ph) * scale));
+    pts.push(new THREE.Vector2(px * scale, -(py + ph) * scale));
   }
 
-  const positions = new Float32Array(pts.length * 3);
-  for (let i = 0; i < pts.length; i++) {
-    positions[i * 3 + 0] = pts[i].x;
-    positions[i * 3 + 1] = pts[i].y;
-    positions[i * 3 + 2] = pts[i].z;
+  const renderPts = pts;
+
+  const linePts = [...renderPts, renderPts[0].clone()].map((point) => [
+    point.x,
+    point.y,
+    0,
+  ]);
+
+  // 2. Build Fill ShapeGeometry (centered at origin so it scales correctly)
+  const shape = new THREE.Shape();
+  const cX = center.x * scale;
+  const cY = -center.y * scale;
+
+  shape.moveTo(renderPts[0].x - cX, renderPts[0].y - cY);
+  for (let i = 1; i < renderPts.length; i++) {
+    shape.lineTo(renderPts[i].x - cX, renderPts[i].y - cY);
   }
+  shape.lineTo(renderPts[0].x - cX, renderPts[0].y - cY);
+  
+  const geoFill = new THREE.ShapeGeometry(shape);
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-
-  return geo;
-}, [plot, bounds, scale]);
+  return { outlinePoints: linePts, fillGeo: geoFill };
+}, [plot, bounds, scale, center.x, center.y]);
 
   // ✅ IMPORTANT: compute distances AFTER mount
   React.useEffect(() => {
     if (lineRef.current) {
       lineRef.current.computeLineDistances();
     }
-  }, [outlineGeo]);
+  }, [outlinePoints]);
   React.useEffect(() => {
     popupAnimStartRef.current = performance.now();
     if (popupRef.current) {
@@ -117,8 +172,26 @@ useFrame(() => {
   const panelWidth = Math.max(0.5, Math.min(bounds.width * scale * 0, 1.6));
   const panelHeight = Math.max(0.22, panelWidth * 0);
 
-  const widthLabel = formatDimensionLabel(plot?.plotWidth || bounds.width);
-  const heightLabel = formatDimensionLabel(plot?.plotHeight || bounds.height);
+  const widthLabel = formatDimensionLabel(plot?.plotWidth || (bounds.width * pixelToFt));
+  const heightLabel = formatDimensionLabel(plot?.plotHeight || (bounds.height * pixelToFt));
+  // ✅ ADD THIS BELOW widthLabel & heightLabel
+const plotArea = (() => {
+  const widthFt = Number(plot?.plotWidth || (bounds.width * pixelToFt));
+  const heightFt = Number(plot?.plotHeight || (bounds.height * pixelToFt));
+
+  if (!widthFt || !heightFt) return null;
+
+  const areaFt = Number(plot?.area || (widthFt * heightFt));
+  const areaM = areaFt * 0.092903;
+
+  const ftText = `${Math.round(areaFt)} ft²`;
+  const mText =
+    areaM >= 100
+      ? `${Math.round(areaM)} m²`
+      : `${areaM.toFixed(2)} m²`;
+
+  return `${mText} / ${ftText}`; // 👈 combined text block for area
+})();
     const padding = 1; // 🔥 adjust this for spacing
     const dimOffset = 2.5; // 🔥 distance of dimension labels from plot edge
 
@@ -126,44 +199,87 @@ useFrame(() => {
   return (
     <group>
       {/* dashed outline */}
-      <line
+      <DreiLine
         ref={lineRef} // ✅ ADDED
-        geometry={outlineGeo}
+        points={outlinePoints}
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, elevation + 0.01, 0]}
-        renderOrder={2}
-      >
-        <lineDashedMaterial
-          attach="material"
-          color={"#ffffff"}
+        position={[0, elevation + OVERLAY_OUTLINE_LIFT, 0]}
+        color="#ffffff"
+        lineWidth={2.2}
+        dashed
+        dashScale={1}
+        dashSize={0.12}
+        gapSize={0.1}
+        transparent
+        opacity={1}
+        depthWrite={false}
+        depthTest={false}
+        renderOrder={14}
+      />
+      {/*
           dashSize={0.05}   // 🔥 FIXED (was 6)
           gapSize={0.05}    // 🔥 FIXED (was 5)
           linewidth={2}    // 🔥 CLEAN UI
-        />
-      </line>
+          depthWrite={false}
+          depthTest={false}
+        */}
+
 
       {/* small blue popup panel (flat) */}
      <mesh
-  ref={popupRef}
-  scale={[0.01, 0.1, 1]} // 🔥 IMPORTANT (start small)
-  position={[center.x * scale, elevation, center.y * scale]}
+ ref={popupRef}
+  geometry={fillGeo}
+  scale={[0.01, 0.01, 1]} // 🔥 IMPORTANT (start small)
+  position={[center.x * scale, elevation + OVERLAY_FILL_LIFT, center.y * scale]}
   rotation={[-Math.PI / 2, 0, 0]}
+  renderOrder={8}
 >
-  <planeGeometry args={[bounds.width * scale, bounds.height * scale]} />
-  <meshBasicMaterial color={"#2c86db"} transparent opacity={1} />
+  <meshBasicMaterial
+    color={theme.selectedPlotpopup}
+    transparent
+    opacity={1}
+    depthWrite={false}
+    polygonOffset
+    polygonOffsetFactor={1}
+    polygonOffsetUnits={1}
+  />
 </mesh>
 
-      {/* popup text (plotNo + area) */}
-      <GroundTextLabel3D
-        text={plot.plotNo ? `${plot.plotNo}` : 'Plot'}
-        position={[center.x * scale, elevation + 0.001, center.y * scale]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        fontSize={0.4}
-        color={LAYOUT_MAP_COLORS.white}
-        outlineColor={LAYOUT_MAP_COLORS.background}
-        outlineWidth={0.15}
-        depthWrite={false}
-      />
+ <GroundTextLabel3D
+  text={plot.plotNo ? `${plot.plotNo}` : '-'}
+  position={[
+    center.x * scale,
+    elevation + OVERLAY_TEXT_LIFT,
+    center.y * scale - 0.15
+  ]}
+  rotation={[-Math.PI / 2, 0, 0]}
+  fontSize={0.35} 
+  fontWeight={700}
+  color={theme.white}
+  outlineColor={theme.background}
+  outlineWidth={0.15}
+  depthWrite={false}
+  renderOrder={10}
+  depthTest={false}
+/>
+<GroundTextLabel3D
+  text={plotArea || ""}
+  position={[
+    center.x * scale,
+    elevation + OVERLAY_TEXT_LIFT,
+    center.y * scale + 0.15 
+  ]}
+  rotation={[-Math.PI / 2, 0, 0]}
+  fontSize={0.12} 
+  fontWeight={500}
+  color={theme.white}
+  outlineColor={theme.background}
+  outlineWidth={0.1}
+  depthWrite={false}
+  renderOrder={10}
+  depthTest={false}
+/>
+
 
       {/* width labels */}
       {widthLabel && (
@@ -172,27 +288,29 @@ useFrame(() => {
             text={widthLabel}
 position={[
   center.x * scale,
-  elevation + 0.02,
+  elevation + OVERLAY_DIMENSION_LIFT,
   (center.y - bounds.height / 2 - padding - dimOffset) * scale
 ]}            rotation={[-Math.PI / 2, 0, 0]}
             fontSize={0.2}
-            color={LAYOUT_MAP_COLORS.white}
-            outlineColor={LAYOUT_MAP_COLORS.background}
+            color={theme.white}
+            outlineColor={theme.background}
             outlineWidth={0.15}
             depthWrite={false}
+            depthTest={false}
           />
           <GroundTextLabel3D
             text={widthLabel}
 position={[
   center.x * scale,
-  elevation + 0.02,
+  elevation + OVERLAY_DIMENSION_LIFT,
   (center.y + bounds.height / 2 + padding + dimOffset) * scale
 ]}            rotation={[-Math.PI / 2, 0, 0]}
             fontSize={0.2}
-            color={LAYOUT_MAP_COLORS.white}
-            outlineColor={LAYOUT_MAP_COLORS.background}
+            color={theme.white}
+            outlineColor={theme.background}
             outlineWidth={0.15}
             depthWrite={false}
+            depthTest={false}
           />
         </>
       )}
@@ -204,27 +322,29 @@ position={[
             text={heightLabel}
 position={[
   (center.x - bounds.width / 2 - padding - dimOffset) * scale, // ✅ shifted left
-  elevation + 0.02,
+  elevation + OVERLAY_DIMENSION_LIFT,
   center.y * scale
 ]}            rotation={[-Math.PI / 2, 0, Math.PI / 2]}
             fontSize={0.2}
-            color={LAYOUT_MAP_COLORS.white}
-            outlineColor={LAYOUT_MAP_COLORS.background}
+            color={theme.white}
+            outlineColor={theme.background}
             outlineWidth={0.15}
             depthWrite={false}
+            depthTest={false}
           />
           <GroundTextLabel3D
             text={heightLabel}
 position={[
   (center.x + bounds.width / 2 + padding + dimOffset) * scale, // ✅ shifted right
-  elevation + 0.02,
+  elevation + OVERLAY_DIMENSION_LIFT,
   center.y * scale
 ]}            rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
             fontSize={0.2}
-            color={LAYOUT_MAP_COLORS.white}
-            outlineColor={LAYOUT_MAP_COLORS.background}
+            color={theme.white}
+            outlineColor={theme.background}
             outlineWidth={0.15}
             depthWrite={false}
+            depthTest={false}
           />
         </>
       )}

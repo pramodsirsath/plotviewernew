@@ -37,7 +37,7 @@ exports.getBuilderLayoutById = async (req, res) => {
 
     // Attach builder's whatsapp number for customer contact
     const builder = await User.findById(builderId).select("whatsappNumber name email");
-    const response = layout.toObject();
+    const response = layout.toJSON();
     response.builderContact = {
       name: builder?.name || "",
       whatsappNumber: builder?.whatsappNumber || builder?.mobile || "",

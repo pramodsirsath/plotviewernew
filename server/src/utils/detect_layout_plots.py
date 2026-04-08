@@ -12,7 +12,10 @@ except Exception as exc:  # pragma: no cover - runtime dependency guard
 
 
 MAX_WORKING_SIDE = 2200
-MIN_COMPONENT_AREA = 700
+# Some tilted or tightly packed plans produce valid plots in the ~300-450 px range
+# after thresholding, so a higher cutoff drops many real quadrangles before shape
+# analysis even begins.
+MIN_COMPONENT_AREA = 300
 MIN_COMPONENT_SIDE = 15
 MAX_COMPONENT_AREA = 15000
 MIN_FILL_RATIO = 0.65
@@ -123,6 +126,70 @@ def compute_axis_alignment_deviation(points):
     return max_deviation
 
 
+def compute_parallel_edge_score(points):
+    if len(points) != 4:
+        return 0.0
+
+    ordered = order_polygon_points(points.astype(np.float32))
+    edge_vectors = [
+        ordered[(index + 1) % 4] - ordered[index]
+        for index in range(4)
+    ]
+    edge_lengths = [float(np.linalg.norm(edge)) for edge in edge_vectors]
+
+    if min(edge_lengths) <= 1e-6:
+        return 0.0
+
+    parallel_scores = []
+
+    for first_index, second_index in ((0, 2), (1, 3)):
+        numerator = abs(float(np.dot(edge_vectors[first_index], edge_vectors[second_index])))
+        denominator = edge_lengths[first_index] * edge_lengths[second_index]
+        parallel_scores.append(numerator / max(denominator, 1e-6))
+
+    return float(sum(parallel_scores) / len(parallel_scores))
+
+
+def compute_opposite_side_similarity(points):
+    if len(points) != 4:
+        return 0.0
+
+    ordered = order_polygon_points(points.astype(np.float32))
+    edge_lengths = [
+        float(np.linalg.norm(ordered[(index + 1) % 4] - ordered[index]))
+        for index in range(4)
+    ]
+
+    if min(edge_lengths) <= 1e-6:
+        return 0.0
+
+    side_ratios = []
+
+    for first_index, second_index in ((0, 2), (1, 3)):
+        first_length = edge_lengths[first_index]
+        second_length = edge_lengths[second_index]
+        side_ratios.append(min(first_length, second_length) / max(first_length, second_length))
+
+    return float(sum(side_ratios) / len(side_ratios))
+
+
+def is_four_point_rectangle_candidate(points, rotated_ratio, solidity):
+    if len(points) != 4:
+        return False
+
+    right_angle_score = compute_right_angle_score(points)
+    parallel_edge_score = compute_parallel_edge_score(points)
+    opposite_side_similarity = compute_opposite_side_similarity(points)
+
+    return (
+        rotated_ratio >= 0.84
+        and solidity >= 0.82
+        and right_angle_score >= 0.75
+        and parallel_edge_score >= 0.98
+        and opposite_side_similarity >= 0.82
+    )
+
+
 def extract_polygon_outline(contour):
     contour_area = max(cv2.contourArea(contour), 1.0)
     best_polygon = None
@@ -131,30 +198,70 @@ def extract_polygon_outline(contour):
     for source in (contour, cv2.convexHull(contour)):
         perimeter = cv2.arcLength(source, True)
 
-        for epsilon_factor in (0.012, 0.018, 0.026, 0.034, 0.048, 0.064):
+        for epsilon_factor in (0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1):
             approximation = cv2.approxPolyDP(source, perimeter * epsilon_factor, True).reshape(-1, 2)
             cleaned = remove_collinear_points(approximation)
 
-            if len(cleaned) < 3:
+            if len(cleaned) != 4:
                 continue
 
             ordered = order_polygon_points(cleaned.astype(np.int32))
             polygon_area = max(compute_polygon_area(ordered), 1.0)
             area_ratio = min(polygon_area, contour_area) / max(polygon_area, contour_area)
-            point_penalty = abs(len(ordered) - 4)
-            rank = (point_penalty, -area_ratio, len(ordered))
+            right_angle_score = compute_right_angle_score(ordered)
+            parallel_edge_score = compute_parallel_edge_score(ordered)
+            opposite_side_similarity = compute_opposite_side_similarity(ordered)
+            rank = (
+                -area_ratio,
+                -right_angle_score,
+                -parallel_edge_score,
+                -opposite_side_similarity,
+            )
 
             if best_polygon is None or rank < best_rank:
                 best_polygon = ordered.astype(np.int32)
                 best_rank = rank
 
-            if len(ordered) == 4 and area_ratio >= 0.84:
+            if area_ratio >= 0.9:
                 return ordered.astype(np.int32)
 
     if best_polygon is not None:
-        return best_polygon
+        return best_polygon.astype(np.int32)
 
-    return order_polygon_points(simplify_polygon(contour).astype(np.int32))
+    rotated_rect = cv2.boxPoints(cv2.minAreaRect(contour))
+    return order_polygon_points(rotated_rect.astype(np.int32))
+
+
+def classify_shape_type(contour, bounds, outline):
+    if len(outline) != 4:
+        return "quadrilateral"
+
+    contour_area = max(cv2.contourArea(contour), 1.0)
+    hull = cv2.convexHull(contour)
+    hull_area = max(cv2.contourArea(hull), 1.0)
+    solidity = contour_area / hull_area
+
+    (_, _), (min_rect_width, min_rect_height), _ = cv2.minAreaRect(contour)
+    min_rect_area = max(float(min_rect_width * min_rect_height), 1.0)
+    rotated_ratio = contour_area / min_rect_area
+
+    polygon_area = max(compute_polygon_area(outline), 1.0)
+    area_ratio = min(polygon_area, contour_area) / max(polygon_area, contour_area)
+    right_angle_score = compute_right_angle_score(outline)
+    parallel_edge_score = compute_parallel_edge_score(outline)
+    opposite_side_similarity = compute_opposite_side_similarity(outline)
+
+    if (
+        area_ratio >= 0.78
+        and rotated_ratio >= 0.82
+        and solidity >= 0.82
+        and right_angle_score >= 0.68
+        and parallel_edge_score >= 0.95
+        and opposite_side_similarity >= 0.75
+    ):
+        return "rectangle"
+
+    return "quadrilateral"
 
 
 def simplify_polygon(contour):
@@ -207,65 +314,23 @@ def remove_collinear_points(points):
 
 
 def is_rectangle_like(contour, bounds):
-    _, _, width, height = bounds
-    if width <= 0 or height <= 0:
-        return False
-
-    contour_area = max(cv2.contourArea(contour), 1.0)
-    bounding_area = float(width * height)
-    bounding_ratio = contour_area / bounding_area
-
-    (_, _), (min_rect_width, min_rect_height), _ = cv2.minAreaRect(contour)
-    min_rect_area = max(float(min_rect_width * min_rect_height), 1.0)
-    rotated_ratio = contour_area / min_rect_area
-
-    hull = cv2.convexHull(contour)
-    hull_area = max(cv2.contourArea(hull), 1.0)
-    solidity = contour_area / hull_area
-    hull_bounding_ratio = hull_area / bounding_area
-
-    coarse = cv2.approxPolyDP(contour, cv2.arcLength(contour, True) * 0.05, True).reshape(-1, 2)
-    coarse_count = len(coarse)
-    right_angle_score = compute_right_angle_score(coarse)
-    hull_coarse = cv2.approxPolyDP(hull, cv2.arcLength(hull, True) * 0.05, True).reshape(-1, 2)
-    hull_right_angle_score = compute_right_angle_score(hull_coarse)
-    hull_axis_deviation = compute_axis_alignment_deviation(hull_coarse)
-    coarse_axis_deviation = compute_axis_alignment_deviation(coarse)
-
-    if (
-        coarse_count == 4
-        and right_angle_score >= 0.72
-        and bounding_ratio >= 0.72
-        and coarse_axis_deviation <= AXIS_ALIGNMENT_TOLERANCE_DEGREES
-    ):
-        return True
-
-    if (
-        len(hull_coarse) == 4
-        and hull_right_angle_score >= 0.72
-        and hull_bounding_ratio >= 0.78
-        and hull_axis_deviation <= AXIS_ALIGNMENT_TOLERANCE_DEGREES
-    ):
-        return True
-
-    if len(hull_coarse) == 4 and hull_axis_deviation > AXIS_ALIGNMENT_TOLERANCE_DEGREES:
-        return False
-
-    if bounding_ratio >= 0.79 and rotated_ratio >= 0.84 and solidity >= 0.85:
-        return True
-
-    return (
-        bounding_ratio >= 0.8
-        and rotated_ratio >= 0.84
-        and solidity >= 0.92
-        and coarse_count <= 6
-    )
+    outline = extract_polygon_outline(contour)
+    return classify_shape_type(contour, bounds, outline) == "rectangle"
 
 
 def build_plot_record(component, sort_index, inverse_scale):
     x, y, width, height = component["bounds"]
     contour = component["contour"]
     center_x, center_y = component["center"]
+    outline = component.get("shape_outline")
+
+    if outline is None:
+        outline = extract_polygon_outline(contour)
+
+    shape_type = component.get("shape_type")
+
+    if shape_type is None:
+        shape_type = classify_shape_type(contour, (x, y, width, height), outline)
 
     origin_x = int(round(x * inverse_scale))
     origin_y = int(round(y * inverse_scale))
@@ -285,23 +350,23 @@ def build_plot_record(component, sort_index, inverse_scale):
         "height": origin_height,
         "centerX": round(center_x * inverse_scale, 2),
         "centerY": round(center_y * inverse_scale, 2),
+        "shapeType": shape_type,
         "points": [],
     }
 
-    if not component["is_rectangle"]:
-        polygon = extract_polygon_outline(contour) + np.array([x, y], dtype=np.int32)
-        scaled_points = []
+    polygon = outline + np.array([x, y], dtype=np.int32)
+    scaled_points = []
 
-        for point in polygon:
-            scaled_points.extend(
-                [
-                    int(round(point[0] * inverse_scale)),
-                    int(round(point[1] * inverse_scale)),
-                ]
-            )
+    for point in polygon:
+        scaled_points.extend(
+            [
+                int(round(point[0] * inverse_scale)),
+                int(round(point[1] * inverse_scale)),
+            ]
+        )
 
-        if len(scaled_points) >= 6:
-            record["points"] = scaled_points
+    if len(scaled_points) >= 6:
+        record["points"] = scaled_points
 
     return record
 
@@ -346,7 +411,8 @@ def collect_components(image):
         if contour_area < area * 0.55:
             continue
 
-        is_rectangle = is_rectangle_like(contour, (x, y, width, height))
+        outline = extract_polygon_outline(contour)
+        shape_type = classify_shape_type(contour, (x, y, width, height), outline)
         center_x, center_y = centroids[label_index]
 
         components.append(
@@ -354,7 +420,9 @@ def collect_components(image):
                 "bounds": (int(x), int(y), int(width), int(height)),
                 "center": (float(center_x), float(center_y)),
                 "contour": contour,
-                "is_rectangle": is_rectangle,
+                "shape_outline": outline,
+                "shape_type": shape_type,
+                "is_rectangle": shape_type == "rectangle",
             }
         )
 
@@ -380,23 +448,16 @@ def sort_components(components):
 
 def extract_outer_boundary(image):
     line_mask = build_line_mask(image)
-    # The outer boundary usually surrounds all components. 
-    # Let's find large external contours.
     contours, _ = cv2.findContours(line_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
     if not contours:
         return []
-    
-    # Sort contours by area descending
+
     contours = sorted(contours, key=cv2.contourArea, reverse=True)
     largest_contour = contours[0]
-    
-    # Simplify the contour heavily to get the outer boundary shape
     perimeter = cv2.arcLength(largest_contour, True)
-    # Try different epsilons to get a nice polygon for the border
     approximation = cv2.approxPolyDP(largest_contour, perimeter * 0.005, True).reshape(-1, 2)
-    
-    # Scale back to original size (just return the points for now, they are scaled in analyze_layout)
+
     return approximation
 
 
@@ -414,9 +475,9 @@ def analyze_layout(image_path):
         for index, component in enumerate(components)
     ]
 
-    rectangle_count = sum(1 for plot in plots if not plot["points"])
+    rectangle_count = sum(1 for plot in plots if plot.get("shapeType") == "rectangle")
     polygon_count = len(plots) - rectangle_count
-    
+
     outer_boundary_points = extract_outer_boundary(resized)
     scaled_boundary = []
     for pt in outer_boundary_points:

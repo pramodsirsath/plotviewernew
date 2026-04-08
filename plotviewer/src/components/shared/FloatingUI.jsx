@@ -23,9 +23,11 @@ export const FloatingUI = ({
 }) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [localSearch, setLocalSearch] = useState(searchQuery || "");
+  const ignoreSyncRef = React.useRef(false);
 
   // Update local input if parent search query changes (e.g. from clear button)
   React.useEffect(() => {
+    if (ignoreSyncRef.current) return;
     setLocalSearch(searchQuery);
   }, [searchQuery]);
 
@@ -62,7 +64,6 @@ export const FloatingUI = ({
           <FileImage size={18} color="#fff" />
         </button>
       )}
-      {statusToggle}
       <button
         style={styles.modeBtn}
         onClick={() => {
@@ -79,7 +80,7 @@ export const FloatingUI = ({
       )}
       {typeof onToggleTopDown === 'function' && (
         <button onClick={onToggleTopDown} style={styles.modeBtn} title={isTopDown ? 'Switch to 3D' : 'Switch to 2D'}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{isTopDown ? '2D' : '3D'}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{isTopDown ? '3D' : '2D'}</div>
         </button>
       )}
     </>
@@ -89,7 +90,15 @@ export const FloatingUI = ({
     <>
       {/* ===== Desktop Layout (>= 641px) ===== */}
       <div style={styles.desktopContainer} className="floating-ui-desktop">
-        {/* Icon button row: Raw Layout | Status | Home | Share | 2D/3D */}
+        {/* Status Toggle Separate Button */}
+        {statusToggle && (
+          <div style={{ ...styles.pill, padding: '6px 8px 6px 14px', gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>Status</span>
+            {statusToggle}
+          </div>
+        )}
+
+        {/* Icon button row: Raw Layout | Home | Share | 2D/3D */}
         <div style={{ ...styles.pill, padding: '4px', gap: 4 }}>
           {primaryControls}
         </div>
@@ -109,7 +118,21 @@ export const FloatingUI = ({
               onChange={(e) => setLocalSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  setSearchQuery(localSearch);
+                  const q = (localSearch || "").trim();
+                  if (!q) return;
+                  // Prevent syncing parent -> local for this short submit cycle
+                  ignoreSyncRef.current = true;
+                  // notify parent to perform search/focus
+                  setSearchQuery(q);
+                  // clear visible input immediately for UX
+                  setLocalSearch("");
+                  setSearchOpen(false);
+                  // clear parent search value shortly after so it doesn't persist
+                  // and re-enable parent->local syncing
+                  setTimeout(() => {
+                    ignoreSyncRef.current = false;
+                    setSearchQuery("");
+                  }, 250);
                 }
               }}
               onFocus={() => setSearchOpen(true)}
@@ -143,6 +166,14 @@ export const FloatingUI = ({
 
       {/* ===== Mobile Layout (< 641px) ===== */}
       <div style={styles.mobileContainer} className="floating-ui-mobile">
+        {/* Status Toggle Separate Button */}
+        {statusToggle && (
+          <div style={{ ...styles.pill, padding: '6px 8px 6px 14px', gap: 10, alignSelf: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>Status</span>
+            {statusToggle}
+          </div>
+        )}
+
         {/* Icon button row centered */}
         <div style={{ ...styles.pill, padding: '4px', gap: 4, alignSelf: 'center' }}>
           {primaryControls}
@@ -157,10 +188,18 @@ export const FloatingUI = ({
               onChange={(e) => setLocalSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  setSearchQuery(localSearch);
+                  const q = (localSearch || "").trim();
+                  if (!q) return;
+                  ignoreSyncRef.current = true;
+                  setSearchQuery(q);
+                  setLocalSearch("");
+                  setTimeout(() => {
+                    ignoreSyncRef.current = false;
+                    setSearchQuery("");
+                  }, 250);
                 }
               }}
-              placeholder="Search Plot (Press Enter)"
+              placeholder="Search Plot"
               style={{ ...styles.searchInput, width: '100%' }}
             />
           </div>
@@ -217,7 +256,7 @@ const styles = {
   /* Mobile: bottom-center, column layout */
   mobileContainer: {
     position: 'absolute',
-    bottom: 16,
+    bottom: 'calc(16px + env(safe-area-inset-bottom))',
     left: 16,
     right: 16,
     zIndex: 1000,

@@ -30,6 +30,31 @@ const copyText = async (value) => {
 };
 
 const LayoutCard = ({ layout, refresh }) => {
+
+const styles = {
+  container: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px"
+  },
+
+  row: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "nowrap",   // 🔥 IMPORTANT (no breaking)
+    alignItems: "center"
+  },
+
+  deleteBtn: {
+    backgroundColor: "#ff4d4f",
+    color: "#fff",
+    border: "none",
+    padding: "8px 14px",
+    borderRadius: "8px",
+    fontWeight: "600"
+  }
+};
+
   const navigate = useNavigate();
   const assignmentKey = (layout.assignedBuilders || [])
     .map((builder) => String(builder._id || builder))
@@ -139,40 +164,46 @@ const LayoutCard = ({ layout, refresh }) => {
         )}
       </div>
 
-      <div className="layout-card__actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        <button className="btn btn-secondary" onClick={handleCopyLink} disabled={isCreatingLink}>
-          {isCreatingLink ? "Preparing Link..." : shareLink ? "Copy Customer Link" : "Create Customer Link"}
-        </button>
-        <button
-          className="btn btn-primary"
-          type="button"
-          onClick={() => setShowAssignments((previous) => !previous)}
-        >
-          {showAssignments ? "Hide Builder Panel" : "Manage Builders"}
-        </button>
-        <button
-          className="btn btn-secondary"
-          type="button"
-          onClick={() => navigate(`/layout/${layout._id}/edit`)}
-        >
-          ✏️ Edit Plots
-        </button>
-        <button
-          className="btn btn-secondary"
-          type="button"
-          onClick={() => navigate(`/layout/${layout._id}/3d-editor`)}
-        >
-          🧊 3D Editor
-        </button>
-        <button
-          className="btn"
-          style={{ backgroundColor: '#ff4d4f', color: '#fff', borderColor: '#ff4d4f', marginLeft: 'auto' }}
-          type="button"
-          onClick={handleDelete}
-        >
-          Delete Layout
-        </button>
-      </div>
+<div style={styles.container}>
+
+  {/* TOP ROW */}
+  <div style={styles.row}>
+    <button className="btn btn-secondary" onClick={handleCopyLink}>
+      {shareLink ? "Copy Link" : "Create Link"}
+    </button>
+
+    <button className="btn btn-primary" onClick={() => setShowAssignments(p => !p)}>
+      Manage Builders
+    </button>
+  </div>
+
+  {/* BOTTOM ROW (IMPORTANT) */}
+  <div style={styles.row}>
+    <button
+      className="btn btn-secondary"
+      onClick={() => navigate(`/layout/${layout._id}/edit`)}
+    >
+      ✏️ Edit
+    </button>
+
+    <button
+      className="btn btn-secondary"
+      onClick={() => navigate(`/layout/${layout._id}/3d-editor`)}
+    >
+      🧊 3D Editor
+    </button>
+
+    {/* ✅ DELETE stays beside */}
+    <button
+      className="btn"
+      style={styles.deleteBtn}
+      onClick={handleDelete}
+    >
+      Delete
+    </button>
+  </div>
+
+</div>
 
       {showAssignments && (
         <div className="layout-card__drawer">

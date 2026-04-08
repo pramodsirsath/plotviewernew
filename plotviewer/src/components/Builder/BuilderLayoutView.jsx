@@ -11,10 +11,17 @@ import { FloatingUI } from "../shared/FloatingUI";
 import CameraAngleController from "../shared/CameraAngleController";
 import FitToLayoutController from "../shared/FitToLayoutController";
 import MapReadOnlyView from "../shared/MapReadOnlyView";
-import PlotSelection3D from "../shared/PlotSelection3D";
+import PlotSelection3D from "../shared/PlotSelection3DExact";
 import GroundTextLabel3D from "../shared/GroundTextLabel3D";
 import useIsCoarsePointer from "../shared/useIsCoarsePointer";
-import { getPlotCenter, getPlotBounds } from "../../utils/plotGeometry";
+import {
+  getPlotAreaSqM,
+  getPlotBounds,
+  getPlotCenter,
+  getPlotDimensionSummary,
+  getPlotRenderPoints,
+} from "../../utils/plotGeometry";
+import { normalizeAngle, normalizeAngleDelta } from "../../utils/gestureUtils";
 import {
   blendHexColors,
   getLayoutStatusStyle as getStatusStyle,
@@ -26,6 +33,8 @@ import "./BuilderLayoutView.css";
 const STATUS_OPTIONS = ["Available", "Reserved", "Sold"];
 const CAMERA_ANIMATION_DURATION = 1000;
 const STATUS_WAVE_DURATION = 1800;
+const ORBIT_ROTATE_SPEED = 3.2;
+const ORBIT_ZOOM_SPEED = 1.2;
 const STATUS_DESCRIPTIONS = {
   Available: "Ready for the next buyer conversation.",
   Reserved: "Temporarily on hold while follow-up continues.",
@@ -119,6 +128,9 @@ const SCALE3D = 0.05;
 const TOP_DOWN_POLAR_EPS = 0.0001;
 const DEFAULT_TOUCH_CONTROLS = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 const MOBILE_TOUCH_CONTROLS = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+const NON_PLOT_BLOCK_COLOR = LAYOUT_MAP_COLORS.nonPlotBlock;
+const NON_PLOT_SURFACE_LIFT = 0.018;
+const NON_PLOT_LAYER_STEP = 0.006;
 
 // Time-based camera animation (max 1.5s)
 function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnimating, fitLocked }) {
@@ -221,25 +233,24 @@ function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnima
   return null;
 }
 
-// Navigate to north: smoothly rotate camera azimuthal angle to 0
-function NavigateToNorth({ trigger, onDone }) {
+// Navigate to north: smoothly rotate camera azimuthal angle to the layout heading.
+function NavigateToNorth({ trigger, onDone, frontDirection = 0 }) {
   const { controls, camera } = useThree();
   React.useEffect(() => {
     if (!trigger || !controls) return;
     let frame;
     let cancelled = false;
     const startTime = performance.now();
-    const startAzimuth = controls.getAzimuthalAngle();
-    // Find shortest path to 0
-    let targetAzimuth = 0;
-    const diff = targetAzimuth - startAzimuth;
+    const startAzimuth = normalizeAngle((controls.getAzimuthalAngle() * 180) / Math.PI);
+    const targetAzimuth = normalizeAngle(frontDirection);
+    const diff = normalizeAngleDelta(targetAzimuth - startAzimuth);
     
     const animate = (now) => {
       if (cancelled) return;
       const elapsed = now - startTime;
       const t = Math.min(elapsed / 800, 1);
       const ease = 1 - Math.pow(1 - t, 4);
-      const currentAzimuth = startAzimuth + diff * ease;
+      const currentAzimuth = ((startAzimuth + diff * ease) * Math.PI) / 180;
       // Rotate camera around target
       const distance = camera.position.distanceTo(controls.target);
       const polar = controls.getPolarAngle();
@@ -258,24 +269,17 @@ function NavigateToNorth({ trigger, onDone }) {
 
 // Removed createPlotLabelTexture as we use Vector Text
 
-const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onClick, showStatus, statusRevealProgress, meta }) {
+const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onClick, showStatus, statusRevealProgress, meta, layerOrder = 0 }) {
+  const isNonPlotBlock = plot.isPlot === false;
   const geometry = React.useMemo(() => {
     const shape = new THREE.Shape();
-    if (plot.points && plot.points.length >= 6) {
-      if (plot.isCurved) {
-        const shapeVectors = [];
-        for (let i = 0; i < plot.points.length; i += 2) {
-          shapeVectors.push(new THREE.Vector2(plot.points[i] * SCALE3D, -plot.points[i + 1] * SCALE3D));
-        }
-        shape.moveTo(shapeVectors[0].x, shapeVectors[0].y);
-        shape.splineThru(shapeVectors);
-      } else {
-        shape.moveTo(plot.points[0] * SCALE3D, -plot.points[1] * SCALE3D);
-        for (let i = 2; i < plot.points.length; i += 2) {
-          shape.lineTo(plot.points[i] * SCALE3D, -plot.points[i+1] * SCALE3D);
-        }
-        shape.lineTo(plot.points[0] * SCALE3D, -plot.points[1] * SCALE3D);
+    const renderPoints = getPlotRenderPoints(plot);
+    if (renderPoints.length >= 6) {
+      shape.moveTo(renderPoints[0] * SCALE3D, -renderPoints[1] * SCALE3D);
+      for (let i = 2; i < renderPoints.length; i += 2) {
+        shape.lineTo(renderPoints[i] * SCALE3D, -renderPoints[i + 1] * SCALE3D);
       }
+      shape.lineTo(renderPoints[0] * SCALE3D, -renderPoints[1] * SCALE3D);
     } else {
       shape.moveTo(plot.x * SCALE3D, -plot.y * SCALE3D);
       shape.lineTo((plot.x + plot.width) * SCALE3D, -plot.y * SCALE3D);
@@ -283,10 +287,17 @@ const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onCl
       shape.lineTo(plot.x * SCALE3D, -(plot.y + plot.height) * SCALE3D);
       shape.lineTo(plot.x * SCALE3D, -plot.y * SCALE3D);
     }
+    if (isNonPlotBlock) {
+      return new THREE.ShapeGeometry(shape);
+    }
+
     return new THREE.ExtrudeGeometry(shape, { depth: isSelected ? 0.1 : 0.05, bevelEnabled: false });
-  }, [plot, isSelected]);
+  }, [plot, isSelected, isNonPlotBlock]);
+
+  const isInteractivePlot = !isNonPlotBlock;
 
   const plotColor = React.useMemo(() => {
+    if (isNonPlotBlock) return plot.blockColor || NON_PLOT_BLOCK_COLOR;
     if (isSelected) return LAYOUT_MAP_COLORS.selectedPlot;
     const statusColor = LAYOUT_STATUS_COLORS[plot.status] || LAYOUT_MAP_COLORS.plot;
 
@@ -294,26 +305,39 @@ const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onCl
     if (statusRevealProgress >= 1) return statusColor;
 
     return blendHexColors(LAYOUT_MAP_COLORS.plot, statusColor, statusRevealProgress);
-  }, [isSelected, plot.status, showStatus, statusRevealProgress]);
+  }, [isNonPlotBlock, plot.blockColor, isSelected, plot.status, showStatus, statusRevealProgress]);
 
   const center = getPlotCenter(plot);
   const bounds = getPlotBounds(plot);
   const labelW = bounds.width * SCALE3D * 0.45;
   const labelH = bounds.height * SCALE3D * 0.45;
   const labelSize = Math.max(0.4, Math.min(labelW, labelH, 2.5));
+  const surfaceLift = isNonPlotBlock
+    ? NON_PLOT_SURFACE_LIFT + layerOrder * NON_PLOT_LAYER_STEP
+    : 0;
+  const meshRenderOrder = isNonPlotBlock ? 10 + layerOrder * 2 : 0;
 
   return (
     <group>
-      <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}
-        onClick={(e) => { e.stopPropagation(); onClick(plot); }}
+      <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, surfaceLift, 0]} renderOrder={meshRenderOrder}
+        onClick={isInteractivePlot ? ((e) => { e.stopPropagation(); onClick(plot); }) : undefined}
       >
-        <meshStandardMaterial color={plotColor} roughness={1} metalness={0} transparent={isDimmed} opacity={isDimmed ? 0.25 : 1} />
-        <lineSegments raycast={() => null} transparent={isDimmed} opacity={isDimmed ? 0.25 : 1}>
-          <edgesGeometry attach="geometry" args={[geometry]} />
-          <lineBasicMaterial attach="material" color={LAYOUT_MAP_COLORS.plotNumber} linewidth={1} />
-        </lineSegments>
+        <meshStandardMaterial
+          color={plotColor}
+          roughness={1}
+          metalness={0}
+          side={isNonPlotBlock ? THREE.DoubleSide : THREE.FrontSide}
+          transparent={isDimmed}
+          opacity={isDimmed ? 0.25 : 1}
+        />
+        {!isNonPlotBlock ? (
+          <lineSegments raycast={() => null} transparent={isDimmed} opacity={isDimmed ? 0.25 : 1}>
+            <edgesGeometry attach="geometry" args={[geometry]} />
+            <lineBasicMaterial attach="material" color={LAYOUT_MAP_COLORS.plotNumber} linewidth={1} />
+          </lineSegments>
+        ) : null}
       </mesh>
-      {plot.plotNo && (
+      {isInteractivePlot && plot.plotNo && (
         <GroundTextLabel3D
           text={plot.plotNo}
           position={[center.x * SCALE3D, isSelected ? 0.12 : 0.06, center.y * SCALE3D]}
@@ -350,7 +374,7 @@ function BoundaryMesh({ boundary, meta }) {
 
   return (
     <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-      <meshStandardMaterial color={LAYOUT_MAP_COLORS.background} roughness={1} />
+      <meshStandardMaterial color={LAYOUT_MAP_COLORS.road} roughness={1} />
     </mesh>
   );
 }
@@ -400,7 +424,7 @@ function CameraRotationTracker({ onAngleChange }) {
   const { controls } = useThree();
   React.useEffect(() => {
     if (!controls) return;
-    const handler = () => onAngleChange(controls.getAzimuthalAngle() * (180 / Math.PI));
+    const handler = () => onAngleChange(normalizeAngle((controls.getAzimuthalAngle() * 180) / Math.PI));
     controls.addEventListener('change', handler);
     return () => controls.removeEventListener('change', handler);
   }, [controls, onAngleChange]);
@@ -549,7 +573,7 @@ const BuilderLayoutView = () => {
   };
 
   const focusPlot = (plot) => {
-    if (!image) {
+    if (!image || plot?.isPlot === false) {
       return;
     }
     setFitLocked(false);
@@ -634,7 +658,9 @@ const BuilderLayoutView = () => {
 
   useEffect(() => {
     if (searchQuery && layout?.plots) {
-      const match = layout.plots.find(p => p.plotNo?.toLowerCase() === searchQuery.toLowerCase() || p.id === searchQuery);
+      const match = layout.plots
+        .filter((plot) => plot.isPlot !== false)
+        .find((plot) => plot.plotNo?.toLowerCase() === searchQuery.toLowerCase() || plot._id === searchQuery || plot.id === searchQuery);
       if (match) {
         focusPlot(match);
       }
@@ -653,7 +679,7 @@ const BuilderLayoutView = () => {
   }, []);
 
   const updateStatus = async (plot, status) => {
-    if (!layout || !plot || plot.status === status) {
+    if (!layout || !plot || plot.isPlot === false || plot.status === status) {
       return;
     }
 
@@ -735,13 +761,14 @@ const BuilderLayoutView = () => {
 
   const imageCenterX = image.width / 2;
   const imageCenterY = image.height / 2;
+  const inventoryPlots = layout.plots.filter((plot) => plot.isPlot !== false);
   const plotCounts = { Available: 0, Reserved: 0, Sold: 0 };
 
-  layout.plots.forEach((plot) => {
+  inventoryPlots.forEach((plot) => {
     plotCounts[plot.status] = (plotCounts[plot.status] || 0) + 1;
   });
 
-  const totalPlots = layout.plots.length;
+  const totalPlots = inventoryPlots.length;
   const selectedDimensions = selectedPlot
     ? `${formatMetricValue(selectedPlot.plotWidth, "ft")} x ${formatMetricValue(selectedPlot.plotHeight, "ft")}`
     : null;
@@ -792,8 +819,8 @@ const BuilderLayoutView = () => {
       )}
 
       {/* Compass — below back button — click to face North */}
-      <div style={{ position: 'absolute', top: 66, left: 16, zIndex: 20 }}>
-        <CompassIndicator rotation={cameraAzimuth} frontDirection={layout?.frontDirection || 0} size={44} onClick={handleNavigateNorth} />
+      <div style={{ position: 'absolute', top: 66, left: 16, zIndex: 20, pointerEvents: 'auto' }}>
+        <CompassIndicator rotation={cameraAzimuth} frontDirection={layout?.frontDirection || 0} size={44} onClick={(e) => { e.stopPropagation(); handleNavigateNorth(); }} />
       </div>
 
       <FloatingUI
@@ -833,13 +860,13 @@ const BuilderLayoutView = () => {
             <CameraAngleController isTopDown={isTopDown} controlsRef={controlsRef} duration={360} onStart={() => setAngleAnimating(true)} onComplete={() => setAngleAnimating(false)} />
             <FitToLayoutController fitKey={fitKey} isTopDown={isTopDown} image={image} layout={layout} scale={SCALE3D} duration={1600} onStart={() => setAngleAnimating(true)} onComplete={() => { setAngleAnimating(false); setFitLocked(true); }} />
             <CameraRotationTracker onAngleChange={setCameraAzimuth} />
-            <NavigateToNorth trigger={navigateNorthTrigger} onDone={() => {}} />
+            <NavigateToNorth trigger={navigateNorthTrigger} frontDirection={layout?.frontDirection || 0} onDone={() => {}} />
             <group position={[-((layout?.meta?.analysisWidth || image.width) * SCALE3D) / 2, 0, -((layout?.meta?.analysisHeight || image.height) * SCALE3D) / 2]}>
               <BoundaryMesh boundary={layout.boundary} meta={layout.meta || { analysisWidth: image.width, analysisHeight: image.height }} />
 
               <CompoundWall boundary={layout.boundary} meta={layout.meta || { analysisWidth: image.width, analysisHeight: image.height }} />
 
-              {layout.plots.map((plot) => {
+              {layout.plots.map((plot, index) => {
                 // Wave: compute per-plot reveal based on x position
                 const plotCenter = getPlotCenter(plot);
                 const analysisW = layout.meta?.analysisWidth || image.width;
@@ -850,16 +877,17 @@ const BuilderLayoutView = () => {
                   <PlotMesh 
                     key={plot._id || plot.id} 
                     plot={plot} 
-                    isSelected={selectedPlot?._id === plot._id}
-                    isDimmed={!!selectedPlot && selectedPlot._id !== plot._id}
+                    isSelected={(selectedPlot?._id || selectedPlot?.id) === (plot._id || plot.id)}
+                    isDimmed={!!selectedPlot && (selectedPlot?._id || selectedPlot?.id) !== (plot._id || plot.id)}
                     onClick={focusPlot}
                     showStatus={showStatus}
                     statusRevealProgress={plotReveal}
+                    layerOrder={index}
                   />
                 );
               })}
 
-              {selectedPlot && <PlotSelection3D plot={selectedPlot} scale={SCALE3D} />}
+              {selectedPlot && <PlotSelection3D plot={selectedPlot} scale={SCALE3D} pixelToFt={layout?.meta?.pixelToFt || 1} theme={LAYOUT_MAP_COLORS} />}
             </group>
             {(layout.props3D || []).map((item) => (
                <RenderProp 
@@ -881,8 +909,9 @@ const BuilderLayoutView = () => {
               maxPolarAngle={Math.PI / 2 - 0.05} 
               enableRotate={true}
               enablePan={true}
-              enableDamping={true}
-              dampingFactor={0.08}
+              enableDamping={false}
+              rotateSpeed={ORBIT_ROTATE_SPEED}
+              zoomSpeed={ORBIT_ZOOM_SPEED}
             />
           </Canvas>
           </>
@@ -894,9 +923,9 @@ const BuilderLayoutView = () => {
 
       {/* Inline status popup near selected plot */}
       {selectedPlot && (() => {
-        const spBounds = getPlotBounds(selectedPlot);
-        const spArea = formatMetricValue(selectedPlot.area || (spBounds.width * spBounds.height * (layout?.meta?.pixelToFt || 1) ** 2), "sq.ft");
-        const spDims = `${formatMetricValue(spBounds.width * (layout?.meta?.pixelToFt || 1))}×${formatMetricValue(spBounds.height * (layout?.meta?.pixelToFt || 1))} ft`;
+        const pixelToFt = layout?.meta?.pixelToFt || 1;
+        const spArea = formatMetricValue(getPlotAreaSqM(selectedPlot, pixelToFt), "m²");
+        const spDims = getPlotDimensionSummary(selectedPlot, pixelToFt);
         return (
         <div style={{
           position: 'absolute',
@@ -914,7 +943,10 @@ const BuilderLayoutView = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <div>
               <div style={{ color: '#fff', fontWeight: 800, fontSize: '1.1rem', fontFamily: "'Outfit','Inter',sans-serif" }}>Plot {selectedPlot.plotNo || "-"}</div>
-              <div style={{ color: '#94a3b8', fontSize: '0.78rem', marginTop: 2 }}>{spArea} • {spDims}</div>
+              <div style={{ color: '#94a3b8', fontSize: '0.78rem', marginTop: 2, lineHeight: 1.45 }}>
+                <div>{spArea}</div>
+                {spDims ? <div>{spDims}</div> : null}
+              </div>
             </div>
             <button onClick={() => setSelectedPlot(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1, padding: 4 }}>×</button>
           </div>

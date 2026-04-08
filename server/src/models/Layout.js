@@ -1,5 +1,10 @@
 const mongoose = require("mongoose");
 
+const schemaSerializationOptions = {
+  toJSON: { flattenMaps: true },
+  toObject: { flattenMaps: true },
+};
+
 const plotSchema = new mongoose.Schema({
   plotNo: String,
   plotWidth: String,
@@ -14,10 +19,15 @@ const plotSchema = new mongoose.Schema({
   width: Number,
   height: Number,
   points: [Number],
+  curveEdges: [Number],
+  curveFactors: { type: Map, of: Number, default: {} },
+  edgeLengthsMeters: { type: Map, of: Number, default: {} },
   isCurved: { type: Boolean, default: false },
   centerX: Number,
   centerY: Number,
-});
+  isPlot: { type: Boolean, default: true },
+  blockColor: { type: String, default: "#86efac" },
+}, schemaSerializationOptions);
 
 const layoutSchema = new mongoose.Schema({
   imageUrl: String,
@@ -60,6 +70,7 @@ const layoutSchema = new mongoose.Schema({
     rotation: { type: Number, default: 0 },
     zoom: { type: Number, default: 18 },
     opacity: { type: Number, default: 0.7 },
+    scale: { type: Number, default: 1 },
     bounds: {
       north: Number,
       south: Number,
@@ -75,6 +86,6 @@ const layoutSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-});
+}, schemaSerializationOptions);
 
 module.exports = mongoose.model("Layout", layoutSchema);

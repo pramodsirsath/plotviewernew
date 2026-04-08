@@ -25,6 +25,43 @@ import {
 } from "../../theme/layoutMapTheme";
 
 const DEFAULT_STATUS = "Available";
+const FEET_TO_METERS = 0.3048;
+
+const formatFeetValueAsMeters = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return "";
+  }
+
+  const meterValue = numericValue * FEET_TO_METERS;
+
+  return Math.abs(meterValue - Math.round(meterValue)) < 0.01
+    ? String(Math.round(meterValue))
+    : meterValue.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+};
+
+const parseMeterInputToFeet = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return "";
+  }
+
+  const feetValue = numericValue / FEET_TO_METERS;
+
+  return Math.abs(feetValue - Math.round(feetValue)) < 0.01
+    ? String(Math.round(feetValue))
+    : feetValue.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+};
 
 const PlotEditor = () => {
   const navigate = useNavigate();
@@ -351,7 +388,7 @@ const PlotEditor = () => {
                       <Text
                         x={rect.x + 5}
                         y={rect.y + 5}
-                        text={`#${rect.plotNo}\n${rect.plotWidth || "-"} x ${rect.plotHeight || "-"}`}
+                        text={`#${rect.plotNo}\n${formatFeetValueAsMeters(rect.plotWidth) || "-"} m x ${formatFeetValueAsMeters(rect.plotHeight) || "-"} m`}
                         fontSize={12}
                         fontFamily={LAYOUT_MAP_FONT_FAMILY}
                         fill={LAYOUT_MAP_COLORS.plotNumber}
@@ -383,8 +420,8 @@ const PlotEditor = () => {
           ) : (
             <div style={styles.formStack}>
               <input placeholder="Plot No" value={selectedRect.plotNo} onChange={(e) => handleInputChange("plotNo", e.target.value)} style={styles.input} />
-              <input placeholder="Width" value={selectedRect.plotWidth} onChange={(e) => handleInputChange("plotWidth", e.target.value)} style={styles.input} />
-              <input placeholder="Height" value={selectedRect.plotHeight} onChange={(e) => handleInputChange("plotHeight", e.target.value)} style={styles.input} />
+              <input placeholder="Width (m)" type="number" step="0.01" inputMode="decimal" value={formatFeetValueAsMeters(selectedRect.plotWidth)} onChange={(e) => handleInputChange("plotWidth", parseMeterInputToFeet(e.target.value))} style={styles.input} />
+              <input placeholder="Height (m)" type="number" step="0.01" inputMode="decimal" value={formatFeetValueAsMeters(selectedRect.plotHeight)} onChange={(e) => handleInputChange("plotHeight", parseMeterInputToFeet(e.target.value))} style={styles.input} />
               <select value={selectedRect.status} onChange={(e) => handleInputChange("status", e.target.value)} style={styles.input}>
                 <option value="Available">Available</option>
                 <option value="Reserved">Reserved</option>

@@ -169,7 +169,7 @@ exports.getPublicLayout = async (req, res) => {
       }
     }
 
-    const response = layout.toObject();
+    const response = layout.toJSON();
     response.builderContact = builderContact;
     res.status(200).json(response);
   } catch (error) {

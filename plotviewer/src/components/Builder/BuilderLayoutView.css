@@ -1,10 +1,14 @@
 .builder-layout-view {
   position: relative;
-  min-height: 100vh;
+  height: 100dvh;   /* ✅ FIX */
+    padding-bottom: env(safe-area-inset-bottom); /* ✅ mobile safe space */
+
+  
   overflow: hidden;
   isolation: isolate;
   background: var(--bg);
   transition: background 0.3s ease;
+  touch-action: none;  /* Prevent browser from intercepting touch gestures */
 }
 
 .builder-layout-view--state {
@@ -259,8 +263,9 @@
 .builder-layout-view__canvas-shell {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100%;
   cursor: default !important;
+  touch-action: none;  /* Prevent browser from stealing touch events */
 }
 
 .builder-layout-view__canvas-shell.is-active {

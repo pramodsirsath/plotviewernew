@@ -1,47 +1,36 @@
 import React, { useEffect, useRef, useState } from "react";
-import { resolveServerUrl } from "../../config/runtime";
 import { generateLayoutSVG, getLayoutCropBounds } from "../../utils/plotGeometry";
-
-const GOOGLE_MAPS_API_KEY = "AIzaSyB-njL0QCNaGM8yjJw3q3PZ1ZYncy9IclA";
-
-// Load Google Maps script dynamically
-let googleMapsPromise = null;
-function loadGoogleMaps() {
-  if (googleMapsPromise) return googleMapsPromise;
-  if (window.google?.maps) return Promise.resolve(window.google.maps);
-  googleMapsPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=geometry`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve(window.google.maps);
-    script.onerror = (e) => reject(new Error("Failed to load Google Maps"));
-    document.head.appendChild(script);
-  });
-  return googleMapsPromise;
-}
+import { loadGoogleMaps } from "../../utils/googleMapsLoader";
+import { createCustomOverlayClass } from "../../utils/CustomOverlay";
 
 /**
  * MapReadOnlyView — read-only map view showing the layout image overlaid on Google Maps satellite imagery.
  */
 const MapReadOnlyView = ({ layout, onClose }) => {
   const mapOverlay = layout?.mapOverlay;
-  const hasOverlay = mapOverlay?.center?.lat && mapOverlay?.center?.lng;
+  const hasOverlay = Number.isFinite(mapOverlay?.center?.lat) && Number.isFinite(mapOverlay?.center?.lng);
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
+  const overlayRef = useRef(null);
+  const overlayImageUrlRef = useRef("");
   const [mapError, setMapError] = useState(null);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
-    if (!hasOverlay) return;
+    if (!hasOverlay || !mapRef.current || mapInstanceRef.current) return;
     let cancelled = false;
+    let localMap = null;
+
+    setMapError(null);
 
     loadGoogleMaps()
       .then((maps) => {
-        if (cancelled || !mapRef.current) return;
+        if (cancelled || !mapRef.current || mapInstanceRef.current) return;
+
+        mapRef.current.innerHTML = "";
 
         const center = { lat: mapOverlay.center.lat, lng: mapOverlay.center.lng };
-        const map = new maps.Map(mapRef.current, {
+        localMap = new maps.Map(mapRef.current, {
           center,
           zoom: mapOverlay.zoom || 18,
           mapTypeId: "satellite",
@@ -55,45 +44,106 @@ const MapReadOnlyView = ({ layout, onClose }) => {
           ],
         });
 
-        mapInstanceRef.current = map;
-
-        // Add layout image overlay
-        const imageUrl = generateLayoutSVG(layout);
-        if (imageUrl) {
-          const cropBounds = getLayoutCropBounds(layout);
-          const w = cropBounds.width;
-          const h = cropBounds.height;
-          const aspect = h / w;
-          const scale = mapOverlay.scale || 1;
-          const baseWidthMeters = 200 * scale;
-          const halfW = baseWidthMeters / 2;
-          const halfH = (baseWidthMeters * aspect) / 2;
-
-          const south = center.lat - (halfH / 111320);
-          const north = center.lat + (halfH / 111320);
-          const west = center.lng - (halfW / (111320 * Math.cos(center.lat * Math.PI / 180)));
-          const east = center.lng + (halfW / (111320 * Math.cos(center.lat * Math.PI / 180)));
-
-          const bounds = new maps.LatLngBounds(
-            new maps.LatLng(south, west),
-            new maps.LatLng(north, east)
-          );
-
-          const overlayInstance = new maps.GroundOverlay(imageUrl, bounds, {
-            opacity: mapOverlay.opacity || 0.65,
-            clickable: false,
-          });
-          overlayInstance.setMap(map);
-        }
-
-        setMapLoaded(true);
+        mapInstanceRef.current = localMap;
+        setMapReady(true);
       })
       .catch((err) => {
         if (!cancelled) setMapError(err.message);
       });
 
-    return () => { cancelled = true; };
-  }, [hasOverlay, mapOverlay, layout]);
+    return () => {
+      cancelled = true;
+
+      if (overlayRef.current) {
+        overlayRef.current.setMap(null);
+        overlayRef.current = null;
+        overlayImageUrlRef.current = "";
+      }
+
+      if (mapInstanceRef.current === localMap) {
+        mapInstanceRef.current = null;
+      }
+
+      setMapReady(false);
+
+      if (mapRef.current) {
+        mapRef.current.innerHTML = "";
+      }
+    };
+  }, [hasOverlay, mapOverlay?.center?.lat, mapOverlay?.center?.lng, mapOverlay?.zoom]);
+
+  useEffect(() => {
+    if (!hasOverlay || !mapReady || !mapInstanceRef.current) {
+      return;
+    }
+
+    const maps = window.google?.maps;
+    if (!maps) {
+      return;
+    }
+
+    const imageUrl = generateLayoutSVG(layout);
+    if (!imageUrl) {
+      return;
+    }
+
+    const center = { lat: mapOverlay.center.lat, lng: mapOverlay.center.lng };
+    const cropBounds = getLayoutCropBounds(layout);
+    const aspect = cropBounds.width > 0 ? cropBounds.height / cropBounds.width : 1;
+    const baseWidthMeters = 200;
+    const halfW = baseWidthMeters / 2;
+    const halfH = (baseWidthMeters * aspect) / 2;
+
+    const south = center.lat - (halfH / 111320);
+    const north = center.lat + (halfH / 111320);
+    const west = center.lng - (halfW / (111320 * Math.cos(center.lat * Math.PI / 180)));
+    const east = center.lng + (halfW / (111320 * Math.cos(center.lat * Math.PI / 180)));
+
+    const bounds = new maps.LatLngBounds(
+      new maps.LatLng(south, west),
+      new maps.LatLng(north, east)
+    );
+
+    if (!overlayRef.current || overlayImageUrlRef.current !== imageUrl) {
+      if (overlayRef.current) {
+        overlayRef.current.setMap(null);
+      }
+
+      const CustomOverlayClass = createCustomOverlayClass(maps);
+      const overlayInstance = new CustomOverlayClass(
+        bounds,
+        imageUrl,
+        mapOverlay.opacity || 0.65,
+        mapOverlay.rotation || 0,
+        mapOverlay.scale || 1,
+        null,
+        { draggable: false }
+      );
+
+      overlayInstance.setMap(mapInstanceRef.current);
+      overlayRef.current = overlayInstance;
+      overlayImageUrlRef.current = imageUrl;
+      const syncOverlay = () => {
+        overlayInstance.updateConfig({
+          bounds,
+          opacity: mapOverlay.opacity || 0.65,
+          rotation: mapOverlay.rotation || 0,
+          scale: mapOverlay.scale || 1,
+          draggable: false,
+        });
+      };
+      window.requestAnimationFrame(syncOverlay);
+      maps.event.addListenerOnce(mapInstanceRef.current, "idle", syncOverlay);
+    } else {
+      overlayRef.current.updateConfig({
+        bounds,
+        opacity: mapOverlay.opacity || 0.65,
+        rotation: mapOverlay.rotation || 0,
+        scale: mapOverlay.scale || 1,
+        draggable: false,
+      });
+    }
+  }, [hasOverlay, layout, mapOverlay, mapReady]);
 
   if (!hasOverlay) {
     return (

@@ -1,25 +1,9 @@
+import { GLOBAL_COLORS } from "./globalColors";
+
 export const LAYOUT_MAP_FONT_NAME = "Inria Sans";
 export const LAYOUT_MAP_FONT_FAMILY = `"${LAYOUT_MAP_FONT_NAME}", "Inter", sans-serif`;
 
-export const LAYOUT_MAP_COLORS = Object.freeze({
-  background: "#232323",
-  plot: "#cfc4aa",
-  road: "#414141",
-  grass: "#687e35",
-  treeLeaf: "#70873a",
-  compoundWall: "#676767",
-  plotNumber: "#292929",
-  roadTextAccent: "#cbcbcb",
-  roadText: "#d1d1d1",
-  // selectedPlot: "#2c86db",
-  selectedPlot: "#cfc4aa",
-
-  available: "#4275d1",
-  reserved: "#c19d3d",
-  sold: "#b45261",
-  white: "#ffffff",
-  shadow: "#000000",
-});
+export const LAYOUT_MAP_COLORS = GLOBAL_COLORS;
 
 export const LAYOUT_STATUS_COLORS = Object.freeze({
   Available: LAYOUT_MAP_COLORS.available,
@@ -81,7 +65,7 @@ export const getLayoutStatusStyle = (status) => {
     text: solid,
     fill: toRgba(solid, 0.78),
     solid,
-    selectedFill: LAYOUT_MAP_COLORS.selectedPlot,
+    selectedFill: LAYOUT_MAP_COLORS.plot,
   };
 };
 
