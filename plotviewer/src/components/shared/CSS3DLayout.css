@@ -1,0 +1,399 @@
+/* ═══════════════════════════════════════════════
+   CSS 3D Layout Renderer — Styles
+   Replaces Three.js Canvas for Customer/Public views.
+   Everything runs on the GPU compositor — zero WebGL.
+═══════════════════════════════════════════════ */
+
+/* ── Viewport (outermost container, captures pointer events) ── */
+.css3d-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  contain: layout style;
+}
+.css3d-viewport:active {
+  cursor: grabbing;
+}
+
+/* ── Perspective wrapper ── */
+.css3d-perspective-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective-origin: 50% 30%;
+  will-change: perspective;
+  transition: perspective 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* ── The 3D World container ── */
+.css3d-world {
+  position: relative;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  will-change: transform;
+  transition: transform 0.08s linear;
+}
+.css3d-world--animated {
+  transition: transform 1.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* ── Ground plate (road/background surface) ── */
+.css3d-ground {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+}
+
+/* ── Boundary SVG layer ── */
+.css3d-boundary-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════
+   PLOTS
+═══════════════════════════════════════════════ */
+.css3d-plot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 1px;
+  transition: filter 0.12s, opacity 0.25s;
+  transform: translateZ(1px);
+  backface-visibility: hidden;
+}
+.css3d-plot:hover {
+  filter: brightness(1.15);
+  z-index: 10;
+}
+.css3d-plot--dimmed {
+  opacity: 0.55;
+}
+.css3d-plot--selected {
+  z-index: 20;
+  filter: brightness(1.05);
+}
+.css3d-plot--nonplot {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Plot polygon (SVG-based for irregular shapes) */
+.css3d-plot-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.css3d-plot-polygon {
+  cursor: pointer;
+  pointer-events: fill;
+  transition: opacity 0.25s;
+}
+.css3d-plot-polygon:hover {
+  filter: brightness(1.15);
+}
+
+/* Plot labels — native DOM text (always crisp!) */
+.css3d-plot-label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inset: 0;
+  font-weight: 600;
+  color: #292929;
+  pointer-events: none;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  transform: translateZ(2px);
+  backface-visibility: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   COMPOUND WALL (CSS 3D extruded)
+═══════════════════════════════════════════════ */
+.css3d-wall-wrap {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+.css3d-wall-segment {
+  position: absolute;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   3D PROPS — TREE
+═══════════════════════════════════════════════ */
+.css3d-tree {
+  position: absolute;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+/* Trunk */
+.css3d-tree__trunk {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  transform-style: preserve-3d;
+  transform: translateX(-50%);
+}
+.css3d-tree__trunk-front {
+  position: absolute;
+  bottom: 0;
+  transform-origin: bottom center;
+  transform: rotateX(-90deg);
+}
+.css3d-tree__trunk-side {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  transform-origin: bottom right;
+  transform: rotateY(90deg) rotateX(-90deg);
+}
+.css3d-tree__trunk-top {
+  position: absolute;
+}
+
+/* Canopy — stacked faceted discs */
+.css3d-tree__canopy {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  backface-visibility: hidden;
+}
+/* Faceted look using clip-path */
+.css3d-tree__canopy--faceted {
+  clip-path: polygon(
+    50% 0%, 93% 25%, 93% 75%,
+    50% 100%, 7% 75%, 7% 25%
+  );
+  border-radius: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   3D PROPS — TEMPLE
+═══════════════════════════════════════════════ */
+.css3d-temple {
+  position: absolute;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+.css3d-temple__face {
+  position: absolute;
+  backface-visibility: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   3D PROPS — COURT / CRICKET
+═══════════════════════════════════════════════ */
+.css3d-court {
+  position: absolute;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+.css3d-court__surface {
+  position: absolute;
+  border-radius: 2px;
+}
+.css3d-court__line {
+  position: absolute;
+  pointer-events: none;
+}
+.css3d-court__post {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+.css3d-court__cage {
+  position: absolute;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(10,10,10,0.35) 0px,
+    rgba(10,10,10,0.35) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════
+   3D PROPS — GATE
+═══════════════════════════════════════════════ */
+.css3d-gate {
+  position: absolute;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+.css3d-gate__pillar {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+.css3d-gate__bridge {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+/* ═══════════════════════════════════════════════
+   3D PROPS — WATER TANK
+═══════════════════════════════════════════════ */
+.css3d-tank {
+  position: absolute;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════
+   3D PROPS — GRASS PATCH
+═══════════════════════════════════════════════ */
+.css3d-grass {
+  position: absolute;
+  border-radius: 2px;
+  pointer-events: none;
+  transform: translateZ(0.5px);
+}
+
+/* ═══════════════════════════════════════════════
+   3D PROPS — TEXT LABEL
+═══════════════════════════════════════════════ */
+.css3d-text {
+  position: absolute;
+  pointer-events: none;
+  font-weight: 700;
+  white-space: pre;
+  text-align: center;
+  transform: translateZ(1px);
+  letter-spacing: 0.02em;
+}
+
+/* ═══════════════════════════════════════════════
+   SELECTED PLOT OVERLAY
+═══════════════════════════════════════════════ */
+.css3d-selection {
+  position: absolute;
+  transform-style: preserve-3d;
+  pointer-events: none;
+  z-index: 50;
+}
+.css3d-selection__fill {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(3px);
+  animation: css3d-pop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.css3d-selection__border {
+  position: absolute;
+  border: 2px dashed #ffffff;
+  transform: translateZ(4px);
+  animation: css3d-pop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.css3d-selection__label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  inset: 0;
+  transform: translateZ(5px);
+  color: #ffffff;
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  animation: css3d-pop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both;
+}
+.css3d-selection__plotno {
+  font-weight: 700;
+  line-height: 1;
+}
+.css3d-selection__area {
+  font-weight: 500;
+  opacity: 0.9;
+  line-height: 1.4;
+}
+.css3d-selection__dim {
+  position: absolute;
+  color: #ffffff;
+  font-weight: 600;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+  pointer-events: none;
+  transform: translateZ(5px);
+}
+.css3d-selection__dim--top,
+.css3d-selection__dim--bottom {
+  left: 50%;
+  transform: translateX(-50%) translateZ(5px);
+}
+.css3d-selection__dim--left,
+.css3d-selection__dim--right {
+  top: 50%;
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+}
+.css3d-selection__dim--left {
+  transform: translateY(-50%) rotate(180deg) translateZ(5px);
+}
+.css3d-selection__dim--right {
+  transform: translateY(-50%) translateZ(5px);
+}
+
+/* ── Animations ── */
+@keyframes css3d-pop-in {
+  0% {
+    transform: translateZ(3px) scale(0.3);
+    opacity: 0;
+  }
+  100% {
+    transform: translateZ(3px) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ── Interaction blocker during animations ── */
+.css3d-block-interaction {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: auto;
+  background: transparent;
+}
+
+/* ── 3D face helpers ── */
+.css3d-face-top    { transform-origin: center center; }
+.css3d-face-front  { transform-origin: bottom center; }
+.css3d-face-right  { transform-origin: center right;  }
+.css3d-face-left   { transform-origin: center left;   }
+.css3d-face-back   { transform-origin: top center;    }
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE / MOBILE OPTIMIZATIONS
+═══════════════════════════════════════════════ */
+@media (pointer: coarse) {
+  .css3d-plot {
+    /* Larger touch target */
+    min-width: 16px;
+    min-height: 16px;
+  }
+  .css3d-plot-label {
+    font-weight: 700;
+  }
+}

@@ -1,5 +1,7 @@
-const app = require('./app.js');
 const dotenv = require('dotenv');
+dotenv.config();
+
+const app = require('./app.js');
 const mongoose = require('mongoose');
 const fs = require("fs");
 const path = require("path");
@@ -12,8 +14,6 @@ if (!fs.existsSync(uploadsDir)) {
   fs.unlinkSync(uploadsDir);
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
-
-dotenv.config();
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {

@@ -2,11 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { generateLayoutSVG, getLayoutCropBounds } from "../../utils/plotGeometry";
 import { loadGoogleMaps } from "../../utils/googleMapsLoader";
 import { createCustomOverlayClass } from "../../utils/CustomOverlay";
+import useGlobalLayoutTheme from "./useGlobalLayoutTheme";
 
 /**
  * MapReadOnlyView — read-only map view showing the layout image overlaid on Google Maps satellite imagery.
  */
 const MapReadOnlyView = ({ layout, onClose }) => {
+  const { theme } = useGlobalLayoutTheme();
   const mapOverlay = layout?.mapOverlay;
   const hasOverlay = Number.isFinite(mapOverlay?.center?.lat) && Number.isFinite(mapOverlay?.center?.lng);
   const mapRef = useRef(null);
@@ -82,7 +84,7 @@ const MapReadOnlyView = ({ layout, onClose }) => {
       return;
     }
 
-    const imageUrl = generateLayoutSVG(layout);
+    const imageUrl = generateLayoutSVG(layout, theme);
     if (!imageUrl) {
       return;
     }
@@ -143,7 +145,7 @@ const MapReadOnlyView = ({ layout, onClose }) => {
         draggable: false,
       });
     }
-  }, [hasOverlay, layout, mapOverlay, mapReady]);
+  }, [hasOverlay, layout, mapOverlay, mapReady, theme]);
 
   if (!hasOverlay) {
     return (

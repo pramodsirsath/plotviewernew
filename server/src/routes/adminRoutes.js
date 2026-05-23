@@ -1,7 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const upload = require("../middlewares/uploadMiddleware");
-const { analyzeLayoutImage, uploadImage } = require("../controllers/uploadController");
+const {
+  analyzeLayoutImage,
+  uploadImage,
+  uploadModel,
+  proxyModelFile,
+} = require("../controllers/uploadController");
 const {
   saveLayout,
   getLayout,
@@ -17,13 +22,22 @@ const {
   updateMapOverlay,
   updateLayout,
 } = require("../controllers/layoutController");
+const {
+  getAppearanceTheme,
+  updateAppearanceTheme,
+} = require("../controllers/appearanceController");
 
 const { protect } = require("../middlewares/authMiddleware");
 const { adminOnly } = require("../middlewares/adminMiddleware");
 
 router.post("/upload-image", protect, adminOnly, upload.single("layout"), uploadImage);
+router.post("/upload-model", protect, adminOnly, upload.single("model"), uploadModel);
+router.get("/model-file/:modelPath", proxyModelFile);
+router.get("/model-file", proxyModelFile);
 router.post("/analyze-layout", protect, adminOnly, analyzeLayoutImage);
 router.post("/upload-layout", protect, adminOnly, saveLayout);
+router.get("/appearance/theme", getAppearanceTheme);
+router.put("/appearance/theme", protect, adminOnly, updateAppearanceTheme);
 router.put("/layouts/:id/3d", protect, adminOnly, updateLayout3D);
 router.get("/layout/:id", getLayout);
 router.put("/layouts/:id", protect, adminOnly, updateLayout);

@@ -5,7 +5,7 @@ const crypto = require("crypto");
 
 exports.saveLayout = async (req, res) => {
   try {
-    const { name, imageUrl, plots, boundary, meta } = req.body;
+    const { name, imageUrl, plots, boundary, meta, modelAssets } = req.body;
 
     if (!imageUrl) {
       return res.status(400).json({ message: "Image URL is required" });
@@ -20,6 +20,7 @@ exports.saveLayout = async (req, res) => {
       plots: plots || [],
       boundary: boundary || [],
       meta: meta || {},
+      modelAssets: modelAssets || {},
       assignedBuilders: [],
       isPublic: false,
       publicToken: null,
@@ -40,7 +41,7 @@ exports.saveLayout = async (req, res) => {
 
 exports.updateLayout = async (req, res) => {
   try {
-    const { name, imageUrl, plots, boundary, meta } = req.body;
+    const { name, imageUrl, plots, boundary, meta, modelAssets } = req.body;
     const layout = await Layout.findById(req.params.id);
     
     if (!layout) {
@@ -52,6 +53,7 @@ exports.updateLayout = async (req, res) => {
     if (plots) layout.plots = plots;
     if (boundary) layout.boundary = boundary;
     if (meta) layout.meta = meta;
+    if (modelAssets !== undefined) layout.modelAssets = modelAssets || {};
 
     await layout.save();
 

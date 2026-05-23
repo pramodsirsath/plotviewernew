@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, Line } from "@react-three/drei";
 import * as THREE from "three";
 import API from "../../services/api";
 import { resolveServerUrl } from "../../config/runtime";
@@ -11,9 +11,18 @@ import { FloatingUI } from "../shared/FloatingUI";
 import CameraAngleController from "../shared/CameraAngleController";
 import FitToLayoutController from "../shared/FitToLayoutController";
 import MapReadOnlyView from "../shared/MapReadOnlyView";
-import PlotSelection3D from "../shared/PlotSelection3DExact";
+import PlotSelection3D from "../shared/PlotSelection3D";
 import GroundTextLabel3D from "../shared/GroundTextLabel3D";
-import useIsCoarsePointer from "../shared/useIsCoarsePointer";
+import HtmlPlotBorder3D from "../shared/HtmlPlotBorder3D";
+import LayoutSceneEnvironment from "../shared/LayoutSceneEnvironment";
+import ScreenSpacePlotLabelOverlay from "../shared/ScreenSpacePlotLabelOverlay";
+import useForegroundRefreshKey from "../shared/useForegroundRefreshKey";
+import useGlobalLayoutTheme from "../shared/useGlobalLayoutTheme";
+import useLayoutPerformanceMode from "../shared/useLayoutPerformanceMode";
+import useOrbitInteractionMode, {
+  DESKTOP_ORBIT_MOUSE_BUTTONS,
+  LAYOUT_TOUCH_CONTROLS,
+} from "../shared/useOrbitInteractionMode";
 import {
   getPlotAreaSqM,
   getPlotBounds,
@@ -25,13 +34,15 @@ import { normalizeAngle, normalizeAngleDelta } from "../../utils/gestureUtils";
 import {
   blendHexColors,
   getLayoutStatusStyle as getStatusStyle,
-  LAYOUT_MAP_COLORS,
   LAYOUT_STATUS_COLORS,
 } from "../../theme/layoutMapTheme";
+import { getLayoutRenderProfile } from "../../theme/layoutAppearance";
 import "./BuilderLayoutView.css";
 
 const STATUS_OPTIONS = ["Available", "Reserved", "Sold"];
-const CAMERA_ANIMATION_DURATION = 1000;
+const CAMERA_ANIMATION_DURATION = 1450;
+const CAMERA_ANIMATION_DURATION_COARSE = 1750;
+const MAX_CONSTRAINED_PLOT_LABELS = 70;
 const STATUS_WAVE_DURATION = 1800;
 const ORBIT_ROTATE_SPEED = 3.2;
 const ORBIT_ZOOM_SPEED = 1.2;
@@ -44,6 +55,11 @@ const getViewport = () => ({
   width: typeof window !== "undefined" ? window.innerWidth : 1280,
   height: typeof window !== "undefined" ? window.innerHeight : 720,
 });
+const easeInOutCubic = (value) => (
+  value < 0.5
+    ? 4 * value * value * value
+    : 1 - Math.pow(-2 * value + 2, 3) / 2
+);
 const rotatePoint = (point, center, angle) => {
   const radians = (angle * Math.PI) / 180;
   const cosine = Math.cos(radians);
@@ -126,15 +142,28 @@ const getFittedViewport = ({ img, angle, canvasWidth, canvasHeight }) => {
 // --- 3D Components ---
 const SCALE3D = 0.05;
 const TOP_DOWN_POLAR_EPS = 0.0001;
-const DEFAULT_TOUCH_CONTROLS = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-const MOBILE_TOUCH_CONTROLS = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
-const NON_PLOT_BLOCK_COLOR = LAYOUT_MAP_COLORS.nonPlotBlock;
-const NON_PLOT_SURFACE_LIFT = 0.018;
-const NON_PLOT_LAYER_STEP = 0.006;
+const BOUNDARY_LIFT = -0.05;
+const PLOT_SURFACE_LIFT = BOUNDARY_LIFT + 0.0025;
+const PLOT_EDGE_LIFT = 0.0035;
+const PLOT_LABEL_LIFT = PLOT_SURFACE_LIFT + 0.022;
+const SELECTED_PLOT_LABEL_LIFT = PLOT_SURFACE_LIFT + 0.026;
+const SELECTED_OVERLAY_ELEVATION = PLOT_SURFACE_LIFT + 0.004;
+const NON_PLOT_SURFACE_LIFT = PLOT_SURFACE_LIFT + 0.006;
+const NON_PLOT_LAYER_STEP = 0.003;
 
 // Time-based camera animation (max 1.5s)
-function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnimating, fitLocked }) {
-  const { camera, controls } = useThree();
+function CameraAnimator({
+  cameraTargetPlot,
+  image,
+  layout,
+  isTopDown,
+  angleAnimating,
+  fitLocked,
+  isCoarsePointer = false,
+  onStart,
+  onComplete,
+}) {
+  const { camera, controls, invalidate } = useThree();
   
   // Animate on plot selection (fit selected plot larger in view)
   React.useEffect(() => {
@@ -144,9 +173,13 @@ function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnima
 
     const analysisW = layout.meta?.analysisWidth || image.width;
     const analysisH = layout.meta?.analysisHeight || image.height;
+    const animationDuration = isCoarsePointer
+      ? CAMERA_ANIMATION_DURATION_COARSE
+      : CAMERA_ANIMATION_DURATION;
 
     let frame;
     let cancelled = false;
+    let completed = false;
     const startTarget = controls.target.clone();
     const startPos = camera.position.clone();
     const startTime = performance.now();
@@ -163,8 +196,8 @@ function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnima
       const width = Math.max(0.0001, bounds.width * SCALE3D);
       const height = Math.max(0.0001, bounds.height * SCALE3D);
 
-      // Fill ~70% of viewport with the selected plot for a clear, large view
-      const fillFraction = 0.82;
+      // Keep a little more breathing room so the focus move feels smoother on small screens.
+      const fillFraction = isCoarsePointer ? 0.68 : 0.74;
       const fov = ((camera.fov || 45) * Math.PI) / 180;
       const aspect = camera.aspect || (window.innerWidth / window.innerHeight);
       const tanFov2 = Math.tan(fov / 2);
@@ -172,7 +205,7 @@ function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnima
       const halfW = width / 2;
       const distV = halfH / (tanFov2 * fillFraction);
       const distH = halfW / (tanFov2 * aspect * fillFraction);
-      const dist = Math.max(4.5, Math.min(2000, Math.max(distV, distH)));
+      const dist = Math.max(isCoarsePointer ? 6.25 : 4.5, Math.min(2000, Math.max(distV, distH)));
 
       if (isTopDown) {
         const azimuth = controls.getAzimuthalAngle ? controls.getAzimuthalAngle() : 0;
@@ -208,17 +241,34 @@ function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnima
 
     const cancelOnInteract = () => { cancelled = true; };
     controls.addEventListener('start', cancelOnInteract);
+    const finish = () => {
+      if (completed) {
+        return;
+      }
+
+      completed = true;
+      onComplete?.();
+    };
+
+    onStart?.();
+    invalidate();
 
     const animate = (now) => {
-      if (cancelled) return;
+      if (cancelled) {
+        finish();
+        return;
+      }
       const elapsed = now - startTime;
-      const t = Math.min(elapsed / CAMERA_ANIMATION_DURATION, 1);
-      const ease = 1 - Math.pow(1 - t, 4);
+      const t = Math.min(elapsed / animationDuration, 1);
+      const ease = easeInOutCubic(t);
       controls.target.lerpVectors(startTarget, endTarget, ease);
       camera.position.lerpVectors(startPos, endPos, ease);
       controls.update();
+      invalidate();
       if (t < 1) {
         frame = requestAnimationFrame(animate);
+      } else {
+        finish();
       }
     };
     frame = requestAnimationFrame(animate);
@@ -227,15 +277,29 @@ function CameraAnimator({ cameraTargetPlot, image, layout, isTopDown, angleAnima
       cancelled = true;
       controls.removeEventListener('start', cancelOnInteract);
       if (frame) cancelAnimationFrame(frame);
+      finish();
     };
-  }, [cameraTargetPlot, camera, controls, image, layout]);
+  }, [
+    angleAnimating,
+    camera,
+    cameraTargetPlot,
+    controls,
+    fitLocked,
+    image,
+    invalidate,
+    isCoarsePointer,
+    isTopDown,
+    layout,
+    onComplete,
+    onStart,
+  ]);
 
   return null;
 }
 
 // Navigate to north: smoothly rotate camera azimuthal angle to the layout heading.
 function NavigateToNorth({ trigger, onDone, frontDirection = 0 }) {
-  const { controls, camera } = useThree();
+  const { controls, camera, invalidate } = useThree();
   React.useEffect(() => {
     if (!trigger || !controls) return;
     let frame;
@@ -258,18 +322,31 @@ function NavigateToNorth({ trigger, onDone, frontDirection = 0 }) {
       camera.position.z = controls.target.z + distance * Math.sin(polar) * Math.cos(currentAzimuth);
       camera.position.y = controls.target.y + distance * Math.cos(polar);
       controls.update();
+      invalidate();
       if (t < 1) frame = requestAnimationFrame(animate);
       else onDone?.();
     };
     frame = requestAnimationFrame(animate);
     return () => { cancelled = true; if (frame) cancelAnimationFrame(frame); };
-  }, [trigger, controls, camera]);
+  }, [trigger, controls, camera, invalidate, onDone, frontDirection]);
   return null;
 }
 
 // Removed createPlotLabelTexture as we use Vector Text
 
-const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onClick, showStatus, statusRevealProgress, meta, layerOrder = 0 }) {
+const PlotMesh = React.memo(function PlotMesh({
+  plot,
+  isSelected,
+  isDimmed,
+  onClick,
+  showStatus,
+  statusRevealProgress,
+  meta,
+  layerOrder = 0,
+  theme,
+  renderProfile,
+  showPlotLabel = true,
+}) {
   const isNonPlotBlock = plot.isPlot === false;
   const geometry = React.useMemo(() => {
     const shape = new THREE.Shape();
@@ -287,35 +364,59 @@ const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onCl
       shape.lineTo(plot.x * SCALE3D, -(plot.y + plot.height) * SCALE3D);
       shape.lineTo(plot.x * SCALE3D, -plot.y * SCALE3D);
     }
-    if (isNonPlotBlock) {
-      return new THREE.ShapeGeometry(shape);
-    }
-
-    return new THREE.ExtrudeGeometry(shape, { depth: isSelected ? 0.1 : 0.05, bevelEnabled: false });
-  }, [plot, isSelected, isNonPlotBlock]);
+    return new THREE.ShapeGeometry(shape);
+  }, [plot]);
 
   const isInteractivePlot = !isNonPlotBlock;
+  const shouldDim = isInteractivePlot && isDimmed;
 
   const plotColor = React.useMemo(() => {
-    if (isNonPlotBlock) return plot.blockColor || NON_PLOT_BLOCK_COLOR;
-    if (isSelected) return LAYOUT_MAP_COLORS.selectedPlot;
-    const statusColor = LAYOUT_STATUS_COLORS[plot.status] || LAYOUT_MAP_COLORS.plot;
+    if (isNonPlotBlock) return plot.blockColor || theme.nonPlotBlock;
+    if (isSelected) return theme.selectedPlot;
+    const statusColor = LAYOUT_STATUS_COLORS[plot.status] || theme.plot;
 
-    if (statusRevealProgress <= 0) return LAYOUT_MAP_COLORS.plot;
+    if (statusRevealProgress <= 0) return theme.plot;
     if (statusRevealProgress >= 1) return statusColor;
 
-    return blendHexColors(LAYOUT_MAP_COLORS.plot, statusColor, statusRevealProgress);
-  }, [isNonPlotBlock, plot.blockColor, isSelected, plot.status, showStatus, statusRevealProgress]);
+    return blendHexColors(theme.plot, statusColor, statusRevealProgress);
+  }, [isNonPlotBlock, isSelected, plot.blockColor, plot.status, showStatus, statusRevealProgress, theme]);
 
   const center = getPlotCenter(plot);
   const bounds = getPlotBounds(plot);
+  const outlinePoints = React.useMemo(() => {
+    const pts = [];
+    const renderPoints = getPlotRenderPoints(plot);
+
+    if (renderPoints.length >= 6) {
+      for (let index = 0; index < renderPoints.length; index += 2) {
+        pts.push(new THREE.Vector3(renderPoints[index] * SCALE3D, -renderPoints[index + 1] * SCALE3D, PLOT_EDGE_LIFT));
+      }
+      pts.push(new THREE.Vector3(renderPoints[0] * SCALE3D, -renderPoints[1] * SCALE3D, PLOT_EDGE_LIFT));
+    } else {
+      pts.push(new THREE.Vector3(plot.x * SCALE3D, -plot.y * SCALE3D, PLOT_EDGE_LIFT));
+      pts.push(new THREE.Vector3((plot.x + plot.width) * SCALE3D, -plot.y * SCALE3D, PLOT_EDGE_LIFT));
+      pts.push(new THREE.Vector3((plot.x + plot.width) * SCALE3D, -(plot.y + plot.height) * SCALE3D, PLOT_EDGE_LIFT));
+      pts.push(new THREE.Vector3(plot.x * SCALE3D, -(plot.y + plot.height) * SCALE3D, PLOT_EDGE_LIFT));
+      pts.push(new THREE.Vector3(plot.x * SCALE3D, -plot.y * SCALE3D, PLOT_EDGE_LIFT));
+    }
+
+    return pts;
+  }, [plot]);
   const labelW = bounds.width * SCALE3D * 0.45;
   const labelH = bounds.height * SCALE3D * 0.45;
-  const labelSize = Math.max(0.4, Math.min(labelW, labelH, 2.5));
+  const labelSize = Math.max(
+    renderProfile.plotLabelMinSize,
+    Math.min(labelW, labelH, renderProfile.plotLabelMaxSize)
+  );
+  const plotLabelRenderMode = renderProfile.plotLabelRenderMode || "html";
+  const plotLabelMaxWidth = bounds.width * SCALE3D * 0.82;
+  const plotLabelMaxHeight = bounds.height * SCALE3D * 0.56;
   const surfaceLift = isNonPlotBlock
     ? NON_PLOT_SURFACE_LIFT + layerOrder * NON_PLOT_LAYER_STEP
-    : 0;
-  const meshRenderOrder = isNonPlotBlock ? 10 + layerOrder * 2 : 0;
+    : PLOT_SURFACE_LIFT;
+  const meshRenderOrder = isNonPlotBlock ? 18 + layerOrder * 2 : 0;
+  const shouldRenderPlotLabel = isInteractivePlot && plot.plotNo && showPlotLabel && !isSelected;
+  const shouldRenderGroundLabel = shouldRenderPlotLabel && plotLabelRenderMode !== "svg-overlay";
 
   return (
     <group>
@@ -324,37 +425,68 @@ const PlotMesh = React.memo(function PlotMesh({ plot, isSelected, isDimmed, onCl
       >
         <meshStandardMaterial
           color={plotColor}
-          roughness={1}
+          roughness={isNonPlotBlock ? Math.min(1, renderProfile.plotRoughness + 0.06) : renderProfile.plotRoughness}
           metalness={0}
           side={isNonPlotBlock ? THREE.DoubleSide : THREE.FrontSide}
-          transparent={isDimmed}
-          opacity={isDimmed ? 0.25 : 1}
+          transparent={shouldDim}
+          opacity={shouldDim ? 0.25 : 1}
+          polygonOffset
+          polygonOffsetFactor={-2}
+          polygonOffsetUnits={-4}
         />
-        {!isNonPlotBlock ? (
-          <lineSegments raycast={() => null} transparent={isDimmed} opacity={isDimmed ? 0.25 : 1}>
-            <edgesGeometry attach="geometry" args={[geometry]} />
-            <lineBasicMaterial attach="material" color={LAYOUT_MAP_COLORS.plotNumber} linewidth={1} />
-          </lineSegments>
-        ) : null}
       </mesh>
-      {isInteractivePlot && plot.plotNo && (
+      {!isNonPlotBlock && !isSelected && renderProfile.borderWidth > 0 ? (
+        renderProfile.useHtmlPlotBorder ? (
+          <HtmlPlotBorder3D
+            plot={plot}
+            scale={SCALE3D}
+            elevation={surfaceLift}
+            color={theme.plotBorder}
+            lineWidth={renderProfile.borderWidth}
+            opacity={shouldDim ? 0.25 : 1}
+          />
+        ) : (
+          <Line
+            points={outlinePoints}
+            color={theme.plotBorder}
+            lineWidth={renderProfile.borderWidth}
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, surfaceLift, 0]}
+            renderOrder={12}
+            raycast={() => null}
+            transparent={shouldDim}
+            opacity={shouldDim ? 0.25 : 1}
+            depthTest={false}
+            depthWrite={false}
+          />
+        )
+      ) : null}
+      {shouldRenderGroundLabel ? (
         <GroundTextLabel3D
           text={plot.plotNo}
-          position={[center.x * SCALE3D, isSelected ? 0.12 : 0.06, center.y * SCALE3D]}
+          renderMode={plotLabelRenderMode}
+          position={[center.x * SCALE3D, isSelected ? SELECTED_PLOT_LABEL_LIFT : PLOT_LABEL_LIFT, center.y * SCALE3D]}
           rotation={[-Math.PI / 2, 0, 0]}
           fontSize={labelSize}
-          color={isSelected ? LAYOUT_MAP_COLORS.white : LAYOUT_MAP_COLORS.plotNumber}
-          opacity={isDimmed ? 0.25 : 1}
+          maxWidth={plotLabelRenderMode === "canvas" ? plotLabelMaxWidth : null}
+          maxHeight={plotLabelRenderMode === "canvas" ? plotLabelMaxHeight : null}
+          fontWeight={renderProfile.plotLabelFontWeight}
+          color={isSelected ? renderProfile.selectedPlotLabelColor : renderProfile.plotLabelColor}
+          outlineColor={renderProfile.plotLabelOutlineColor}
+          outlineWidth={renderProfile.plotLabelOutlineWidth}
+          opacity={shouldDim ? 0.25 : 1}
           depthWrite={false}
+          depthTest={false}
           renderOrder={1}
           raycast={() => null}
+          sharpness={renderProfile.labelSharpness}
         />
-      )}
+      ) : null}
     </group>
   );
 });
 
-function BoundaryMesh({ boundary, meta }) {
+function BoundaryMesh({ boundary, meta, theme, renderProfile }) {
   const geometry = React.useMemo(() => {
     const shape = new THREE.Shape();
     if (boundary && boundary.length > 0) {
@@ -373,14 +505,20 @@ function BoundaryMesh({ boundary, meta }) {
   }, [boundary, meta]);
 
   return (
-    <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-      <meshStandardMaterial color={LAYOUT_MAP_COLORS.road} roughness={1} />
+    <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, BOUNDARY_LIFT, 0]}>
+      <meshStandardMaterial
+        color={theme.road}
+        roughness={renderProfile.roadRoughness}
+        polygonOffset
+        polygonOffsetFactor={4}
+        polygonOffsetUnits={8}
+      />
     </mesh>
   );
 }
 
 // Compound wall around boundary
-function CompoundWall({ boundary, meta }) {
+function CompoundWall({ boundary, meta, theme, renderProfile }) {
   const wallGeometry = React.useMemo(() => {
     const points = [];
     if (boundary && boundary.length >= 6) {
@@ -414,7 +552,7 @@ function CompoundWall({ boundary, meta }) {
   if (!wallGeometry) return null;
   return (
     <mesh geometry={wallGeometry}>
-      <meshStandardMaterial color={LAYOUT_MAP_COLORS.compoundWall} roughness={0.85} metalness={0.05} side={THREE.DoubleSide} />
+      <meshStandardMaterial color={theme.compoundWall} roughness={renderProfile.wallRoughness} metalness={0.05} side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -445,7 +583,6 @@ const BuilderLayoutView = () => {
   const [loadMessage, setLoadMessage] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
   const [updateTone, setUpdateTone] = useState("muted");
-  const [reloadKey, setReloadKey] = useState(0);
   const [showGallery, setShowGallery] = useState(false);
   const [galleryImages, setGalleryImages] = useState([]);
   const [galleryUploading, setGalleryUploading] = useState(false);
@@ -462,7 +599,18 @@ const BuilderLayoutView = () => {
   const [angleAnimating, setAngleAnimating] = useState(false);
   const [fitKey, setFitKey] = useState(0);
   const [fitLocked, setFitLocked] = useState(false);
-  const isCoarsePointer = useIsCoarsePointer();
+  const [cameraFocusActive, setCameraFocusActive] = useState(false);
+  const handleCameraFocusStart = React.useCallback(() => setCameraFocusActive(true), []);
+  const handleCameraFocusComplete = React.useCallback(() => setCameraFocusActive(false), []);
+  const { isCoarsePointer, isConstrainedDevice, isMobileDevice } = useLayoutPerformanceMode();
+  useOrbitInteractionMode({ controlsRef, isCoarsePointer, rotateEnabled: true });
+  const { refreshKey: reloadKey, triggerRefresh } = useForegroundRefreshKey();
+  const { theme } = useGlobalLayoutTheme();
+  const renderProfile = React.useMemo(
+    () => getLayoutRenderProfile(theme, { isCoarsePointer, isConstrainedDevice, isMobileDevice }),
+    [isCoarsePointer, isConstrainedDevice, isMobileDevice, theme]
+  );
+
 
   const [viewport, setViewport] = useState(getViewport());
 
@@ -517,7 +665,9 @@ const BuilderLayoutView = () => {
       setUpdateTone("muted");
 
       try {
-        const res = await API.get(`/builder/layouts/${id}`);
+        const res = await API.get(`/builder/layouts/${id}`, {
+          params: { _ts: Date.now() },
+        });
 
         if (isCancelled) {
           return;
@@ -566,6 +716,7 @@ const BuilderLayoutView = () => {
 
   const fitToScreen = () => {
     setSelectedPlot(null);
+    setCameraFocusActive(false);
     setCameraTargetPlot(undefined);
     setFitLocked(false);
     setAngleAnimating(true);
@@ -577,8 +728,9 @@ const BuilderLayoutView = () => {
       return;
     }
     setFitLocked(false);
+    setCameraFocusActive(true);
     setSelectedPlot(plot);
-    setCameraTargetPlot(plot); // Animate camera to this plot
+    setCameraTargetPlot({ ...plot }); // Animate camera to this plot even when reselecting it
   };
 
   // =============== SHARE ===============
@@ -748,7 +900,7 @@ const BuilderLayoutView = () => {
               <button
                 type="button"
                 className="builder-layout-view__action builder-layout-view__action--primary"
-                onClick={() => setReloadKey((previousKey) => previousKey + 1)}
+                onClick={triggerRefresh}
               >
                 Try Again
               </button>
@@ -769,6 +921,7 @@ const BuilderLayoutView = () => {
   });
 
   const totalPlots = inventoryPlots.length;
+  const allowPlotLabels = true;
   const selectedDimensions = selectedPlot
     ? `${formatMetricValue(selectedPlot.plotWidth, "ft")} x ${formatMetricValue(selectedPlot.plotHeight, "ft")}`
     : null;
@@ -841,30 +994,82 @@ const BuilderLayoutView = () => {
 
       <div className={`builder-layout-view__canvas-shell is-active`}>
         <div className="builder-layout-view__canvas-frame" />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 6,
+            overflow: "hidden",
+            pointerEvents: "none",
+          }}
+        >
+          <ScreenSpacePlotLabelOverlay
+            controlsRef={controlsRef}
+            plots={layout?.plots || []}
+            layout={layout}
+            image={image}
+            selectedPlot={selectedPlot}
+            scale={SCALE3D}
+            elevation={PLOT_LABEL_LIFT}
+            color={renderProfile.plotLabelColor}
+            fontWeight={renderProfile.plotLabelFontWeight}
+            dimmedOpacity={0.6}
+            isEnabled={allowPlotLabels && renderProfile.plotLabelRenderMode === "svg-overlay"}
+            isTopDown={isTopDown}
+          />
+        </div>
         
         {layout && image && (
           <>
           <Canvas 
-            dpr={[1, 1.5]}
-            performance={{ min: 0.5 }}
+            frameloop="demand"
+            dpr={renderProfile.dpr}
+            performance={{ min: 1 }}
             shadows={false}
+            gl={{ antialias: renderProfile.antialias, powerPreference: isCoarsePointer ? "default" : "high-performance" }}
             camera={{ position: [0, Math.max((layout?.meta?.analysisHeight || image.height) * SCALE3D * 1.5, 50), ((layout?.meta?.analysisHeight || image.height) * SCALE3D) / 2 + 40], fov: 45 }}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', cursor: 'default', touchAction: 'none' }}
-            onPointerMissed={() => { setSelectedPlot(null); setCameraTargetPlot(undefined); }}
+            onPointerMissed={() => {
+              setSelectedPlot(null);
+              setCameraFocusActive(false);
+              setCameraTargetPlot(undefined);
+            }}
           >
-            <color attach="background" args={[LAYOUT_MAP_COLORS.background]} />
-            <ambientLight intensity={0.7} />
-            <hemisphereLight args={['#b1e1ff', '#b97a20', 0.5]} />
-            <directionalLight position={[50, 150, 50]} intensity={1.0} />
-            <CameraAnimator cameraTargetPlot={cameraTargetPlot} image={image} layout={layout} isTopDown={isTopDown} angleAnimating={angleAnimating} fitLocked={fitLocked} />
+            <color attach="background" args={[theme.background]} />
+            <LayoutSceneEnvironment
+              theme={theme}
+              isCoarsePointer={isCoarsePointer}
+              isConstrainedDevice={isConstrainedDevice}
+            />
+            <CameraAnimator
+              cameraTargetPlot={cameraTargetPlot}
+              image={image}
+              layout={layout}
+              isTopDown={isTopDown}
+              angleAnimating={angleAnimating}
+              fitLocked={fitLocked}
+              isCoarsePointer={isCoarsePointer}
+              onStart={handleCameraFocusStart}
+              onComplete={handleCameraFocusComplete}
+            />
             <CameraAngleController isTopDown={isTopDown} controlsRef={controlsRef} duration={360} onStart={() => setAngleAnimating(true)} onComplete={() => setAngleAnimating(false)} />
             <FitToLayoutController fitKey={fitKey} isTopDown={isTopDown} image={image} layout={layout} scale={SCALE3D} duration={1600} onStart={() => setAngleAnimating(true)} onComplete={() => { setAngleAnimating(false); setFitLocked(true); }} />
             <CameraRotationTracker onAngleChange={setCameraAzimuth} />
-            <NavigateToNorth trigger={navigateNorthTrigger} frontDirection={layout?.frontDirection || 0} onDone={() => {}} />
+            <NavigateToNorth trigger={navigateNorthTrigger} frontDirection={layout?.frontDirection || 0} />
             <group position={[-((layout?.meta?.analysisWidth || image.width) * SCALE3D) / 2, 0, -((layout?.meta?.analysisHeight || image.height) * SCALE3D) / 2]}>
-              <BoundaryMesh boundary={layout.boundary} meta={layout.meta || { analysisWidth: image.width, analysisHeight: image.height }} />
+              <BoundaryMesh
+                boundary={layout.boundary}
+                meta={layout.meta || { analysisWidth: image.width, analysisHeight: image.height }}
+                theme={theme}
+                renderProfile={renderProfile}
+              />
 
-              <CompoundWall boundary={layout.boundary} meta={layout.meta || { analysisWidth: image.width, analysisHeight: image.height }} />
+              <CompoundWall
+                boundary={layout.boundary}
+                meta={layout.meta || { analysisWidth: image.width, analysisHeight: image.height }}
+                theme={theme}
+                renderProfile={renderProfile}
+              />
 
               {layout.plots.map((plot, index) => {
                 // Wave: compute per-plot reveal based on x position
@@ -883,11 +1088,23 @@ const BuilderLayoutView = () => {
                     showStatus={showStatus}
                     statusRevealProgress={plotReveal}
                     layerOrder={index}
+                    theme={theme}
+                    renderProfile={renderProfile}
+                    showPlotLabel={allowPlotLabels}
                   />
                 );
               })}
 
-              {selectedPlot && <PlotSelection3D plot={selectedPlot} scale={SCALE3D} pixelToFt={layout?.meta?.pixelToFt || 1} theme={LAYOUT_MAP_COLORS} />}
+              {selectedPlot && (
+                <PlotSelection3D
+                  plot={selectedPlot}
+                  scale={SCALE3D}
+                  elevation={SELECTED_OVERLAY_ELEVATION}
+                  pixelToFt={layout?.meta?.pixelToFt || 1}
+                  theme={theme}
+                  reducedDetail={cameraFocusActive}
+                />
+              )}
             </group>
             {(layout.props3D || []).map((item) => (
                <RenderProp 
@@ -897,6 +1114,7 @@ const BuilderLayoutView = () => {
                  isSelected={false}
                  transformMode={"translate"}
                  onTransformEnd={() => {}}
+                 theme={theme}
                />
             ))}
 
@@ -904,14 +1122,17 @@ const BuilderLayoutView = () => {
             <OrbitControls 
               ref={controlsRef}
               makeDefault 
-              touches={isCoarsePointer ? MOBILE_TOUCH_CONTROLS : DEFAULT_TOUCH_CONTROLS}
+              touches={LAYOUT_TOUCH_CONTROLS}
               minPolarAngle={0} 
               maxPolarAngle={Math.PI / 2 - 0.05} 
               enableRotate={true}
               enablePan={true}
+              mouseButtons={DESKTOP_ORBIT_MOUSE_BUTTONS}
               enableDamping={false}
+              screenSpacePanning
               rotateSpeed={ORBIT_ROTATE_SPEED}
               zoomSpeed={ORBIT_ZOOM_SPEED}
+              panSpeed={1.15}
             />
           </Canvas>
           </>
@@ -948,7 +1169,7 @@ const BuilderLayoutView = () => {
                 {spDims ? <div>{spDims}</div> : null}
               </div>
             </div>
-            <button onClick={() => setSelectedPlot(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1, padding: 4 }}>×</button>
+            <button onClick={() => { setCameraFocusActive(false); setSelectedPlot(null); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1, padding: 4 }}>×</button>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {STATUS_OPTIONS.map((status) => {

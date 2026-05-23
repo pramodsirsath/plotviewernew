@@ -3,6 +3,20 @@ import { useState } from 'react';
 import GroundTextLabel3D from './GroundTextLabel3D';
 import { LAYOUT_MAP_COLORS } from '../../theme/layoutMapTheme';
 
+const PROP_SURFACE_LIFT = 0.022;
+const PROP_RENDER_ORDER = 36;
+const PROP_TEXT_RENDER_ORDER = 38;
+const toRenderablePropPosition = (position = [0, 0, 0]) => ([
+  position[0] || 0,
+  (position[1] || 0) + PROP_SURFACE_LIFT,
+  position[2] || 0,
+]);
+const toStoredPropPosition = (position = [0, 0, 0]) => ([
+  position[0] || 0,
+  (position[1] || 0) - PROP_SURFACE_LIFT,
+  position[2] || 0,
+]);
+
 export function TreeMesh({ theme = LAYOUT_MAP_COLORS }) {
   return (
     <group>
@@ -205,24 +219,21 @@ export function WaterTankMesh({ theme = LAYOUT_MAP_COLORS }) {
   );
 }
 
-export function RoadTextMesh({ item, theme = LAYOUT_MAP_COLORS }) {
+export function TextMesh({ item, theme = LAYOUT_MAP_COLORS }) {
   return (
     <group rotation={[-Math.PI / 2, 0, 0]}>
-      {/* Asphalt Plane */}
-      <mesh receiveShadow position={[0, 0, 0]}>
-        <planeGeometry args={[10, 4]} />
-        <meshStandardMaterial color={theme.road} roughness={0.95} />
-      </mesh>
-
-      {/* Text Label */}
       <GroundTextLabel3D
-        text={item?.text || "ROAD"}
+        text={item?.text || "TEXT"}
         position={[0, 0, 0.05]}
         fontSize={1.35}
-        color={theme.roadText}
-        outlineColor={theme.roadTextAccent}
+        renderMode="html"
+        color={theme.roadText || '#ffffff'}
+        outlineColor={theme.roadTextAccent || '#000000'}
         outlineWidth={0.22}
         depthWrite={false}
+        depthTest={false}
+        renderOrder={PROP_TEXT_RENDER_ORDER}
+        sharpness={theme?.render?.sharpness}
       />
     </group>
   );
@@ -230,6 +241,7 @@ export function RoadTextMesh({ item, theme = LAYOUT_MAP_COLORS }) {
 
 export function RenderProp({ item, onClick, isSelected, transformMode, onTransformEnd, theme = LAYOUT_MAP_COLORS }) {
   const [target, setTarget] = useState(null);
+  const renderPosition = toRenderablePropPosition(item.position);
 
   return (
     <>
@@ -243,7 +255,7 @@ export function RenderProp({ item, onClick, isSelected, transformMode, onTransfo
           onMouseUp={() => {
             if (target && onTransformEnd) {
               onTransformEnd({
-                position: target.position.toArray(),
+                position: toStoredPropPosition(target.position.toArray()),
                 rotation: target.rotation.toArray(),
                 scale: target.scale.toArray()
               });
@@ -253,9 +265,10 @@ export function RenderProp({ item, onClick, isSelected, transformMode, onTransfo
       )}
       <group 
         ref={setTarget}
-        position={item.position}
+        position={renderPosition}
         rotation={item.rotation || [0, 0, 0]}
         scale={item.scale || [1, 1, 1]}
+        renderOrder={PROP_RENDER_ORDER}
         onClick={(e) => {
           if (onClick) {
             onClick(item, e);
@@ -269,7 +282,7 @@ export function RenderProp({ item, onClick, isSelected, transformMode, onTransfo
         {item.type === 'gate' && <GateMesh theme={theme} />}
         {item.type === 'grass' && <GrassMesh theme={theme} />}
         {item.type === 'watertank' && <WaterTankMesh theme={theme} />}
-        {item.type === 'roadtext' && <RoadTextMesh item={item} theme={theme} />}
+        {item.type === 'text' && <TextMesh item={item} theme={theme} />}
       </group>
     </>
   );

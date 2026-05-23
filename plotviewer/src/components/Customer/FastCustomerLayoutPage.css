@@ -1,0 +1,699 @@
+/* ===== FastCustomerLayoutPage — Nakshatra floating UI ===== */
+
+body.fast-layout-active {
+  overflow: hidden;
+  background: #1a1a1a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+body.fast-layout-active::-webkit-scrollbar {
+  display: none;
+}
+
+body.fast-layout-active::before {
+  display: none;
+}
+
+/* ===== Base page — full screen ===== */
+.fast-layout-page {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #1a1a1a;
+  color: white;
+  touch-action: none;
+  isolation: isolate;
+  user-select: none;
+}
+
+.fast-layout-page button,
+.fast-layout-page input,
+.fast-layout-page label {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fast-layout-page--state {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+/* ===== State card (loading/error) ===== */
+.fast-layout-state {
+  width: min(420px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: #202020;
+}
+
+.fast-layout-state__title {
+  font-family: "Outfit", "Inter", sans-serif;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.fast-layout-state__copy {
+  margin-top: 8px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.fast-layout-state__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.fast-layout-pill-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(28, 28, 28, 0.94);
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+.fast-layout-pill-button.is-primary {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+/* ===== Viewer — fills entire screen ===== */
+.nk-viewer-full {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* ===== Header — floating over viewer ===== */
+.nk-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.nk-header > * {
+  pointer-events: auto;
+}
+
+.nk-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nk-header__logo {
+  background-color: #e67e22;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.nk-header__logo svg {
+  width: 100%;
+  height: 100%;
+  color: #1a1a1a;
+}
+
+.nk-header__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #e67e22;
+  margin: 0;
+  font-family: "Outfit", "Inter", sans-serif;
+}
+
+.nk-header__badge {
+  background: #2a2a2a;
+  padding: 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.nk-header__diamond {
+  width: 24px;
+  height: 24px;
+  transform: rotate(45deg);
+  background: #82b440;
+  border-radius: 4px;
+}
+
+/* ===== Compass — top-left below header ===== */
+.nk-compass {
+  position: absolute;
+  top: 68px;
+  left: 16px;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: white;
+  transition: transform 0.15s ease;
+  pointer-events: auto;
+}
+
+.nk-compass:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nk-compass__inner {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nk-compass__n {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 800;
+  color: white;
+}
+
+.nk-compass__needle {
+  width: 24px;
+  height: 24px;
+  transition: transform 0.16s linear;
+}
+
+/* ===== Share button (inside floating controls) ===== */
+.nk-share-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: white;
+  transition: all 0.2s ease;
+  pointer-events: auto;
+  margin-bottom: 4px;
+}
+
+.nk-share-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ===== Floating controls — bottom-right ===== */
+.nk-floating-controls {
+  position: absolute;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  pointer-events: none;
+  max-width: calc(100vw - 32px);
+}
+
+.nk-floating-controls > * {
+  pointer-events: auto;
+}
+
+/* -- Toggle row (status toggle + circular action buttons) -- */
+.nk-controls__toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nk-status-pill {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  gap: 12px;
+}
+
+.nk-status-pill__label {
+  font-size: 0.85rem;
+  color: #d1d5db;
+}
+
+/* Toggle switch */
+.nk-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.nk-toggle input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.nk-toggle__track {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #52525b;
+  transition: background 0.2s ease;
+  position: relative;
+}
+
+.nk-toggle input:checked + .nk-toggle__track {
+  background: #a1a1aa;
+}
+
+.nk-toggle__track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  border: 1px solid #d1d5db;
+  transition: transform 0.2s ease;
+}
+
+.nk-toggle input:checked + .nk-toggle__track::after {
+  transform: translateX(20px);
+}
+
+/* Circular action buttons */
+.nk-quick-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.nk-circle-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: #d1d5db;
+  transition: all 0.2s ease;
+  font-size: 0;
+}
+
+.nk-circle-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+}
+
+.nk-circle-btn.is-active {
+  background: rgba(230, 126, 34, 0.2);
+  border-color: rgba(230, 126, 34, 0.4);
+  color: #e67e22;
+}
+
+.nk-circle-btn--text {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* -- Search bar -- */
+.nk-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.nk-search__icon {
+  position: absolute;
+  left: 16px;
+  pointer-events: none;
+  color: #9ca3af;
+  display: flex;
+}
+
+.nk-search input {
+  width: 100%;
+  padding: 12px 16px 12px 44px;
+  background: #2a2a2a;
+  border: none;
+  border-radius: 999px;
+  color: #e5e7eb;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.nk-search input::placeholder {
+  color: #6b7280;
+}
+
+.nk-search input:focus {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+/* -- Bottom action buttons -- */
+.nk-bottom-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.nk-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: #d1d5db;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0;
+}
+
+.nk-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.nk-action-btn__label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* ===== Toast ===== */
+.nk-toast {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.96);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  animation: nk-fade-in 0.3s ease;
+}
+
+/* ===== Loading bar ===== */
+.nk-loading {
+  position: absolute;
+  left: 50%;
+  bottom: 200px;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: rgba(28, 28, 28, 0.94);
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.nk-loading__bar {
+  width: 54px;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.nk-loading__bar::after {
+  content: "";
+  display: block;
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: #e67e22;
+  animation: nk-loading-shimmer 0.9s ease-in-out infinite alternate;
+}
+
+/* ===== Plot info panel — floating bottom-left ===== */
+.nk-plot-panel {
+  position: absolute;
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 20;
+  width: min(260px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(28, 28, 28, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: nk-slide-up 0.3s ease;
+}
+
+.nk-plot-panel__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(28, 28, 28, 0.94);
+  color: #f8fafc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.nk-plot-panel__title {
+  padding-right: 32px;
+  font-family: "Outfit", "Inter", sans-serif;
+  font-size: 1.08rem;
+  font-weight: 900;
+}
+
+.nk-plot-panel__meta {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.nk-status-chip {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+/* ===== Modals ===== */
+.nk-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.68);
+  animation: nk-fade-in 0.2s ease;
+}
+
+.nk-modal__panel {
+  width: min(680px, 100%);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: #202020;
+  padding: 18px;
+  animation: nk-slide-up 0.3s ease;
+}
+
+.nk-modal__panel--narrow {
+  width: min(420px, 100%);
+}
+
+.nk-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.nk-modal__header h2 {
+  margin: 0;
+  font-family: "Outfit", "Inter", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.nk-modal__header button {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(28, 28, 28, 0.94);
+  color: #f8fafc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nk-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.nk-gallery-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #111;
+}
+
+.nk-empty {
+  padding: 28px 0;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.nk-info-list {
+  display: grid;
+  gap: 10px;
+}
+
+.nk-info-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.nk-info-list span {
+  color: #94a3b8;
+}
+
+/* ===== Animations ===== */
+@keyframes nk-loading-shimmer {
+  from { transform: translateX(-10%); }
+  to { transform: translateX(135%); }
+}
+
+@keyframes nk-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes nk-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== Mobile — stack controls wider ===== */
+@media (max-width: 640px) {
+  .nk-floating-controls {
+    left: 16px;
+    align-items: stretch;
+  }
+
+  .nk-controls__toggle-row {
+    justify-content: space-between;
+  }
+
+  .nk-plot-panel {
+    bottom: calc(200px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ===== Desktop — keep controls compact right ===== */
+@media (min-width: 641px) {
+  .nk-floating-controls {
+    width: 380px;
+  }
+
+  .nk-header__title {
+    font-size: 1.75rem;
+  }
+}
+
+/* ===== Very small screens ===== */
+@media (max-width: 380px) {
+  .nk-header {
+    padding: 12px;
+  }
+
+  .nk-header__title {
+    font-size: 1.2rem;
+    letter-spacing: 0.1em;
+  }
+
+  .nk-circle-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  .nk-action-btn {
+    padding: 10px 6px;
+  }
+}

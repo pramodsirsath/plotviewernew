@@ -39,6 +39,10 @@ const layoutSchema = new mongoose.Schema({
     analysisWidth: Number,
     analysisHeight: Number,
   },
+  modelAssets: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
   props3D: [mongoose.Schema.Types.Mixed],
 
   plots: [plotSchema],

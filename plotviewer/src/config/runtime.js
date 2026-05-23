@@ -43,6 +43,11 @@ const rawApiBase = configuredApiBase
 export const API_BASE_URL = rawApiBase;
 export const API_ORIGIN = toAbsoluteOrigin(API_BASE_URL);
 
+const resolveApiUrl = (value) => {
+  const apiRelativePath = value.replace(/^\/api\/?/, "");
+  return new URL(apiRelativePath, `${API_ORIGIN}/api/`).toString();
+};
+
 const getUploadsPath = (value) => {
   const uploadsIndex = value.indexOf("/uploads/");
   if (uploadsIndex === -1) {
@@ -52,9 +57,42 @@ const getUploadsPath = (value) => {
   return value.slice(uploadsIndex);
 };
 
+const getFirebaseModelProxyPath = (value) => {
+  try {
+    const url = new URL(value);
+    let objectPath = "";
+
+    if (url.hostname === "storage.googleapis.com") {
+      const parts = url.pathname.split("/").filter(Boolean);
+      objectPath = decodeURIComponent(parts.slice(1).join("/"));
+    } else if (url.hostname === "firebasestorage.googleapis.com") {
+      const match = url.pathname.match(/^\/v0\/b\/[^/]+\/o\/(.+)$/);
+      objectPath = match ? decodeURIComponent(match[1]) : "";
+    }
+
+    if (!objectPath.startsWith("models/")) {
+      return null;
+    }
+
+    return `/api/model-file/${encodeURIComponent(objectPath)}`;
+  } catch {
+    return null;
+  }
+};
+
 export const resolveServerUrl = (value) => {
   if (!value || typeof value !== "string") {
     return value;
+  }
+
+  const modelProxyPath = getFirebaseModelProxyPath(value);
+
+  if (modelProxyPath) {
+    return resolveApiUrl(modelProxyPath);
+  }
+
+  if (value.startsWith("/api/")) {
+    return resolveApiUrl(value);
   }
 
   const uploadsPath = getUploadsPath(value);
